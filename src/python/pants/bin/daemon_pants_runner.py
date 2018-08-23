@@ -319,4 +319,4 @@ class DaemonPantsRunner(ProcessManager):
         else:
           self._exiter.exit(0)
     except Exception:
-      self._exiter.handle_unhandled_exception(add_newline=True)
+      Exiter().handle_unhandled_exception(add_newline=True)
