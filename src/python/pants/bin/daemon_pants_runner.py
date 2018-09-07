@@ -10,6 +10,7 @@ import signal
 import sys
 import termios
 import time
+from builtins import str
 from contextlib import contextmanager
 
 from setproctitle import setproctitle as set_process_title
