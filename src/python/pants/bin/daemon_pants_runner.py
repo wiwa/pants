@@ -10,7 +10,6 @@ import signal
 import sys
 import termios
 import time
-from builtins import str as builtin_str
 from contextlib import contextmanager
 
 from setproctitle import setproctitle as set_process_title
@@ -65,12 +64,7 @@ class DaemonExiter(Exiter):
         NailgunProtocol.send_stderr(self._socket, msg)
 
       # Send an Exit chunk with the result.
-      prev_encoded = str(result).encode('ascii')
-      cur_encoded = builtin_str(result).encode('ascii')
-      self._log_exception("@prev_encoded: {!r} ({!r}), cur_encoded: {!r} ({!r})"
-                          .format(prev_encoded, type(prev_encoded), cur_encoded, type(cur_encoded)))
-      # NB: the CORRECT argument is cur_encoded!!!
-      NailgunProtocol.send_exit(self._socket, prev_encoded)
+      NailgunProtocol.send_exit_with_code(self._socket, result)
 
       # Shutdown the connected socket.
       teardown_socket(self._socket)
