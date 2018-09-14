@@ -33,6 +33,7 @@ class PantsRunner(object):
   def run(self):
     options_bootstrapper = OptionsBootstrapper(env=self._env, args=self._args)
     bootstrap_options = options_bootstrapper.get_bootstrap_options()
+    self._exiter.apply_options(bootstrap_options)
 
     if bootstrap_options.for_global_scope().enable_pantsd:
       try:
