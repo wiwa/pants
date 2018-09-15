@@ -84,41 +84,50 @@ class Exiter(object):
     """
     self.exit(result=1, msg=msg)
 
-  def handle_unhandled_exception(self, exc_class=None, exc=None, tb=None, add_newline=False,
-                                 re_raise=False):
-    """Default sys.excepthook implementation for unhandled exceptions."""
+  def format_unhandled_exception(self, exc=None, exc_class=None, tb=None, add_newline=False):
     exc_class = exc_class or sys.exc_info()[0]
     exc = exc or sys.exc_info()[1]
     tb = tb or sys.exc_info()[2]
 
-    def format_msg(print_backtrace=True):
-      msg = 'Exception caught: ({})\n'.format(type(exc))
-      msg += '{}\n'.format(''.join(self._format_tb(tb))) if print_backtrace else '\n'
-      msg += 'Exception message: {}\n'.format(str(exc) if exc else 'none')
-      msg += '\n' if add_newline else ''
-      return msg
+    return """Exception caught: ({exc_class})
+{traceback}
+Exception message: {exc_msg}
+{newline}""".format(exc_class=(exc_class or type(exc)),
+                    traceback=(self._format_tb(tb) if tb else ''),
+                    exc_msg=(str(exc) if exc else 'none'),
+                    newline=('\n' if add_newline else ''))
+
+  def handle_unhandled_exception(self, exc_class=None, exc=None, tb=None, add_newline=False):
+    """Default sys.excepthook implementation for unhandled exceptions."""
+
+    exception_message = self.format_unhandled_exception(
+      exc=exc, exc_class=exc_class,
+      tb=(tb if self._should_print_backtrace else None),
+      add_newline=self._should_print_backtrace)
 
     # Always output the unhandled exception details into a log file.
-    self._log_exception(format_msg())
+    self.log_exception(exception_message)
+    # Print to stderr, and exit with a nonzero return code.
+    self.exit_and_fail(exception_message)
 
-    if re_raise:
-      raise exc
-    self.exit_and_fail(format_msg(self._should_print_backtrace))
+  def log_exception(self, msg, workdir=None):
+    workdir = workdir or self._workdir
+    if not workdir:
+      raise Exception('no workdir or self._workdir was set to log exceptions to. message was: {}'
+                      .format(msg))
 
-  def _log_exception(self, msg):
-    if self._workdir:
-      try:
-        output_path = os.path.join(self._workdir, 'logs', 'exceptions.log')
-        with safe_open(output_path, 'a') as exception_log:
-          exception_log.write('timestamp: {}\n'.format(datetime.datetime.now().isoformat()))
-          exception_log.write('args: {}\n'.format(sys.argv))
-          exception_log.write('pid: {}\n'.format(os.getpid()))
-          exception_log.write(msg)
-          exception_log.write('\n')
-      except Exception as e:
-        # This is all error recovery logic so we catch all exceptions from the logic above because
-        # we don't want to hide the original error.
-        logger.error('Problem logging original exception: {}'.format(e))
+    try:
+      output_path = os.path.join(workdir, 'logs', 'exceptions.log')
+      with safe_open(output_path, 'a') as exception_log:
+        exception_log.write('timestamp: {}\n'.format(datetime.datetime.now().isoformat()))
+        exception_log.write('args: {}\n'.format(sys.argv))
+        exception_log.write('pid: {}\n'.format(os.getpid()))
+        exception_log.write(msg)
+        exception_log.write('\n')
+    except Exception as e:
+      # This is all error recovery logic so we catch all exceptions from the logic above because
+      # we don't want to hide the original error.
+      logger.error('Problem logging original exception: {}'.format(e))
 
   def _setup_faulthandler(self, trace_stream):
     faulthandler.enable(trace_stream)
