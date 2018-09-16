@@ -112,11 +112,11 @@ Exception message: {exc_msg}
 
   def log_exception(self, msg, workdir=None):
     workdir = workdir or self._workdir
-    if not workdir:
-      raise Exception('no workdir or self._workdir was set to log exceptions to. message was: {}'
-                      .format(msg))
 
     try:
+      if not workdir:
+        raise Exception('no workdir or self._workdir was set to log exceptions to. message was: {}'
+                        .format(msg))
       output_path = os.path.join(workdir, 'logs', 'exceptions.log')
       with safe_open(output_path, 'a') as exception_log:
         exception_log.write('timestamp: {}\n'.format(datetime.datetime.now().isoformat()))
@@ -134,7 +134,8 @@ Exception message: {exc_msg}
     # This permits a non-fatal `kill -31 <pants pid>` for stacktrace retrieval.
     faulthandler.register(signal.SIGUSR2, trace_stream, chain=True)
 
-  def set_except_hook(self, trace_stream=None):
+  def set_except_hook(self, trace_stream=None, workdir=None):
     """Sets the global exception hook."""
     self._setup_faulthandler(trace_stream or sys.stderr)
+    self._workdir = workdir or self._workdir
     sys.excepthook = self.handle_unhandled_exception
