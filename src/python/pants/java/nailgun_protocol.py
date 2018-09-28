@@ -27,7 +27,9 @@ class ChunkType(object):
   ENVIRONMENT = b'E'
   WORKING_DIR = b'D'
   COMMAND = b'C'
-  PID = b'P'  # This is a custom extension to the Nailgun protocol spec for transmitting pid info.
+  # PGRP and PID are custom extensions to the Nailgun protocol spec for transmitting pid info.
+  PGRP = b'G'
+  PID = b'P'
   STDIN = b'0'
   STDOUT = b'1'
   STDERR = b'2'
@@ -35,7 +37,7 @@ class ChunkType(object):
   STDIN_EOF = b'.'
   EXIT = b'X'
   REQUEST_TYPES = (ARGUMENT, ENVIRONMENT, WORKING_DIR, COMMAND)
-  EXECUTION_TYPES = (PID, STDIN, STDOUT, STDERR, START_READING_INPUT, STDIN_EOF, EXIT)
+  EXECUTION_TYPES = (PGRP, PID, STDIN, STDOUT, STDERR, START_READING_INPUT, STDIN_EOF, EXIT)
   VALID_TYPES = REQUEST_TYPES + EXECUTION_TYPES
 
 
@@ -230,9 +232,47 @@ class NailgunProtocol(object):
     cls.write_chunk(sock, ChunkType.EXIT, payload)
 
   @classmethod
+  def send_exit_with_code(cls, sock, code):
+    """Send an Exit chunk over the specified socket, containing the specified return code."""
+    encoded_exit_status = cls.encode_int(code)
+    cls.send_exit(sock, payload=encoded_exit_status)
+
+  @classmethod
   def send_pid(cls, sock, pid):
     """Send the PID chunk over the specified socket."""
-    cls.write_chunk(sock, ChunkType.PID, pid)
+    assert(isinstance(pid, int) and pid > 0)
+    encoded_int = cls.encode_int(pid)
+    cls.write_chunk(sock, ChunkType.PID, encoded_int)
+
+  @classmethod
+  def send_pgrp(cls, sock, pgrp):
+    """???"""
+    assert(isinstance(pgrp, int) and pgrp < 0)
+    encoded_int = cls.encode_int(pgrp)
+    cls.write_chunk(sock, ChunkType.PGRP, encoded_int)
+
+  @classmethod
+  def encode_int(cls, obj):
+    """Verify the object is an int, and ASCII-encode it.
+
+    :param int obj: An integer to be encoded.
+    :raises: :class:`TypeError` if `obj` is not an integer.
+    :return: A binary representation of the int `obj` suitable to pass as the `payload` to
+             send_exit().
+    """
+    if not isinstance(obj, int):
+      raise TypeError("cannot encode non-integer object in encode_int(): object was {} (type '{}')."
+                      .format(obj, type(obj)))
+    return str(obj).encode('ascii')
+
+  @classmethod
+  def encode_env_var_value(cls, obj):
+    """Convert `obj` into a UTF-8 encoded binary string.
+
+    The result of this method be used as the value of an environment variable in a subsequent
+    NailgunClient execution.
+    """
+    return str(obj).encode('utf-8')
 
   @classmethod
   def isatty_to_env(cls, stdin, stdout, stderr):
