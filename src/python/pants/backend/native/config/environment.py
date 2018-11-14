@@ -152,6 +152,10 @@ class CppCompiler(datatype([
     'path_entries',
     'exe_filename',
     'library_dirs',
+    'clang_include_dirs',
+    'gcc_include_dirs',
+    'gcc_library_dirs',
+    'clang_library_dirs',
     'include_dirs',
     'extra_args',
 ]), CompilerMixin):

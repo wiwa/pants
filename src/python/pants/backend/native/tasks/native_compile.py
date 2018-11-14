@@ -195,17 +195,40 @@ class NativeCompile(NativeTask, AbstractClass):
     compiler_options = compile_request.compiler_options
     # We are going to execute in the target output, so get absolute paths for everything.
     buildroot = get_buildroot()
-    argv = (
+
+    # CHRIS HACK
+    def pp_compiler_options(opts, compiler):
+      for i in range(len(opts)):
+        if '$GCCLD' in opt:
+          opts[i] = opts[i].replace('$GCCLD', compiler.gcc_library_dirs)
+        elif '$CLANGLD' in opt:
+          opts[i] = opts[i].replace('$CLANGLD', compiler.clang_library_dirs)
+        elif '$GCCID' in opt:
+          opts[i] = opts[i].replace('$GCCID', os.path.join(buildroot, compiler.gcc_include_dirs))
+        elif '$CLANGID' in opt:
+          opts[i] = opts[i].replace('$CLANGID', os.path.join(buildroot, compiler.clang_include_dirs))
+      return opts
+
+
+    argv_before_sources = (
       [compiler.exe_filename] +
-      compiler.extra_args +
+      #compiler.extra_args +
       err_flags +
       # TODO: If we need to produce static libs, don't add -fPIC! (could use Variants -- see #5788).
       ['-c', '-fPIC'] +
-      compiler_options +
-      [
-        '-I{}'.format(os.path.join(buildroot, inc_dir))
-        for inc_dir in compile_request.include_dirs
-      ] +
+      pp_compiler_options(compiler_options, compiler)
+    )
+
+    self.context.log.warn("compile argv before sources: {}".format(argv_before_sources))
+
+
+    argv = (
+      [compiler.exe_filename] +
+      #compiler.extra_args +
+      err_flags +
+      # TODO: If we need to produce static libs, don't add -fPIC! (could use Variants -- see #5788).
+      ['-c', '-fPIC'] +
+      pp_compiler_options(compiler_options, compiler) +
       [os.path.join(buildroot, src) for src in sources_minus_headers])
 
     self.context.log.debug("compile argv: {}".format(argv))
