@@ -180,6 +180,7 @@ def select_llvm_cpp_toolchain(platform, native_toolchain):
   else:
     gcc_install = yield Get(GCCInstallLocationForLLVM, GCC, native_toolchain._gcc)
     provided_gpp = yield Get(CppCompiler, GCC, native_toolchain._gcc)
+
     working_cpp_compiler = provided_clangpp.copy(
       # We need g++'s version of the GLIBCXX library to be able to run, unfortunately.
       #library_dirs=(provided_gpp.library_dirs + provided_clangpp.library_dirs),

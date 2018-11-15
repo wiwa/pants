@@ -91,7 +91,11 @@ class GCC(NativeTool):
       exe_filename='g++',
       library_dirs=self._common_lib_dirs(platform),
       include_dirs=(self._common_include_dirs + self._cpp_include_dirs),
-      extra_args=[])
+      extra_args=[],
+      clang_include_dirs=[],
+      gcc_include_dirs=[],
+      clang_library_dirs=[],
+      gcc_library_dirs=[])
 
 
 @rule(CCompiler, [Select(GCC), Select(Platform)])

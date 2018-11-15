@@ -218,8 +218,7 @@ class NativeCompile(NativeTask, AbstractClass):
       ['-c', '-fPIC'] +
       pp_compiler_options(compiler_options, compiler)
     )
-
-    self.context.log.warn("compile argv before sources: {}".format(argv_before_sources))
+    self.context.log.info("compile argv before sources: {}".format(argv_before_sources))
 
 
     argv = (
