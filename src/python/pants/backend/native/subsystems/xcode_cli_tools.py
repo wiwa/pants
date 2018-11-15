@@ -167,7 +167,11 @@ class XCodeCLITools(Subsystem):
       exe_filename='clang++',
       library_dirs=self.lib_dirs(),
       include_dirs=self.include_dirs(),
-      extra_args=[MIN_OSX_VERSION_ARG])
+      extra_args=[MIN_OSX_VERSION_ARG],
+      clang_include_dirs=[],
+      gcc_include_dirs=[],
+      clang_library_dirs=[],
+      gcc_library_dirs=[])
 
 
 @rule(Assembler, [Select(XCodeCLITools)])
