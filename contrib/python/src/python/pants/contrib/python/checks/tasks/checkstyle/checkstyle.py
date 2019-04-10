@@ -146,6 +146,8 @@ class Checkstyle(LintTaskMixin, Task):
                                 platform=platform_name,
                                 python=interpreter.version_string)
               working_set = WorkingSet(entries=sys.path)
+              self.context.log.debug('WorkingSet for sys.path based resolve: {}'.format(working_set.by_key))
+              self.context.log.debug('Environment for sys.path based resolve: {}, {}'.format(env.platform, env.python))
               for dist in working_set.resolve([Requirement.parse(self._CHECKER_REQ)], env=env):
                 pex_builder.add_direct_requirements(dist.requires())
                 # NB: We add the dist location instead of the dist itself to make sure its a
