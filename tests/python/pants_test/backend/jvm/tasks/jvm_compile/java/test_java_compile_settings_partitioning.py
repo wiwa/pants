@@ -11,7 +11,6 @@ from functools import reduce
 
 from pants.backend.jvm.subsystems.jvm_platform import JvmPlatformSettings
 from pants.backend.jvm.targets.java_library import JavaLibrary
-from pants.backend.jvm.tasks.jvm_compile.jvm_compile import JvmCompile
 from pants.backend.jvm.tasks.jvm_compile.zinc.zinc_compile import ZincCompile
 from pants.base.revision import Revision
 from pants.java.distribution.distribution import DistributionLocator
@@ -167,13 +166,9 @@ class JavaCompileSettingsPartitioningTest(TaskTestBase):
     self.assertNotEqual(JvmPlatformSettings('1.4', '1.6', ['-Xfoo:bar']),
                         JvmPlatformSettings('1.6', '1.6', ['-Xfoo:bar']))
 
-  def _get_zinc_arguments(self, settings):
-    distribution = JvmCompile._local_jvm_distribution(settings=settings)
-    return ZincCompile._format_zinc_arguments(settings, distribution)
-
   def test_java_home_extraction(self):
     init_subsystem(DistributionLocator)
-    _, source, _, target, foo, bar, composite, single = tuple(self._get_zinc_arguments(
+    _, source, _, target, foo, bar, composite, single = tuple(ZincCompile._get_zinc_arguments(
       JvmPlatformSettings('1.7', '1.7', [
         'foo', 'bar', 'foo:$JAVA_HOME/bar:$JAVA_HOME/foobar', '$JAVA_HOME',
       ])
@@ -188,8 +183,7 @@ class JavaCompileSettingsPartitioningTest(TaskTestBase):
     self.assertEqual('foo:{0}/bar:{0}/foobar'.format(single), composite)
 
   def test_java_home_extraction_empty(self):
-    init_subsystem(DistributionLocator)
-    result = tuple(self._get_zinc_arguments(
+    result = tuple(ZincCompile._get_zinc_arguments(
       JvmPlatformSettings('1.7', '1.7', [])
     ))
     self.assertEqual(4, len(result),
@@ -239,7 +233,7 @@ class JavaCompileSettingsPartitioningTest(TaskTestBase):
     # Completely missing a usable distribution.
     with fake_distribution_locator(far_future_version):
       with self.assertRaises(DistributionLocator.Error):
-        self._get_zinc_arguments(JvmPlatformSettings(
+        ZincCompile._get_zinc_arguments(JvmPlatformSettings(
           source_level=farer_future_version,
           target_level=farer_future_version,
           args=['$JAVA_HOME/foo'],
@@ -247,7 +241,7 @@ class JavaCompileSettingsPartitioningTest(TaskTestBase):
 
     # Missing a strict distribution.
     with fake_distribution_locator(farer_future_version) as paths:
-      results = self._get_zinc_arguments(JvmPlatformSettings(
+      results = ZincCompile._get_zinc_arguments(JvmPlatformSettings(
         source_level=far_future_version,
         target_level=far_future_version,
         args=['$JAVA_HOME/foo', '$JAVA_HOME'],
@@ -258,7 +252,7 @@ class JavaCompileSettingsPartitioningTest(TaskTestBase):
     # Make sure we pick up the strictest possible distribution.
     with fake_distribution_locator(farer_future_version, far_future_version) as paths:
       farer_path, far_path = paths
-      results = self._get_zinc_arguments(JvmPlatformSettings(
+      results = ZincCompile._get_zinc_arguments(JvmPlatformSettings(
         source_level=far_future_version,
         target_level=far_future_version,
         args=['$JAVA_HOME/foo', '$JAVA_HOME'],
@@ -269,7 +263,7 @@ class JavaCompileSettingsPartitioningTest(TaskTestBase):
     # Make sure we pick the higher distribution when the lower one doesn't work.
     with fake_distribution_locator(farer_future_version, far_future_version) as paths:
       farer_path, far_path = paths
-      results = self._get_zinc_arguments(JvmPlatformSettings(
+      results = ZincCompile._get_zinc_arguments(JvmPlatformSettings(
         source_level=farer_future_version,
         target_level=farer_future_version,
         args=['$JAVA_HOME/foo', '$JAVA_HOME'],
