@@ -27,6 +27,7 @@ env:
     - PYENV_ROOT="${PYENV_ROOT:-${HOME}/.pants_pyenv}"
     - PATH="${PYENV_ROOT}/shims:${PATH}"
     - AWS_CLI_ROOT="${HOME}/.aws_cli"
+    - PEX_VERBOSE=9
 
 # Stages are documented here: https://docs.travis-ci.com/user/build-stages
 stages:
@@ -536,7 +537,7 @@ py27_osx_build_wheels_ucs2: &py27_osx_build_wheels_ucs2
     - CACHE_NAME=osxwheelsbuild.ucs2
   script:
     - ./build-support/bin/check_pants_pex_abi.py cp27m
-    - RUN_PANTS_FROM_PEX=1 ./build-support/bin/release.sh -n
+    - RUN_PANTS_FROM_PEX=1 ./build-support/bin/release.sh -nd
 
 py27_osx_build_wheels_ucs4: &py27_osx_build_wheels_ucs4
   <<: *py27_osx_config
@@ -560,7 +561,7 @@ py27_osx_build_wheels_ucs4: &py27_osx_build_wheels_ucs4
   script:
     - ./build-support/bin/ci.sh -2b
     - ./build-support/bin/check_pants_pex_abi.py cp27mu
-    - RUN_PANTS_FROM_PEX=1 ./build-support/bin/release.sh -n
+    - RUN_PANTS_FROM_PEX=1 ./build-support/bin/release.sh -nd
 
 py36_osx_build_wheels: &py36_osx_build_wheels
   <<: *py36_osx_test_config
@@ -572,7 +573,7 @@ py36_osx_build_wheels: &py36_osx_build_wheels
     - CACHE_NAME=osxwheelsbuild.abi3
   script:
     - ./build-support/bin/check_pants_pex_abi.py abi3 cp36m
-    - RUN_PANTS_FROM_PEX=1 ./build-support/bin/release.sh -3n
+    - RUN_PANTS_FROM_PEX=1 ./build-support/bin/release.sh -3nd
 
 # -------------------------------------------------------------------------
 # Rust tests
@@ -834,14 +835,6 @@ py36_deploy_unstable_multiplatform_pex: &py36_deploy_unstable_multiplatform_pex
 
 matrix:
   include:
-    - <<: *py27_linux_build_engine
-    - <<: *py27_linux_build_engine
-      stage: *bootstrap_cron
-    - <<: *py36_linux_build_engine
-    - <<: *py36_linux_build_engine
-      stage: *bootstrap_cron
-    - <<: *py37_linux_build_engine
-
     - <<: *py27_osx_build_engine
     - <<: *py27_osx_build_engine
       stage: *bootstrap_cron
@@ -850,148 +843,18 @@ matrix:
       stage: *bootstrap_cron
     - <<: *py37_osx_build_engine
 
-    - <<: *py27_lint
-    - <<: *py36_lint
-    - <<: *py37_lint
-
-    - <<: *linux_rust_clippy
-    - <<: *cargo_audit
-
-    - <<: *py27_linux_test_config
-      name: "Unit tests (Py2.7 PEX)"
-      stage: *test
-      env:
-        - *py27_linux_test_config_env
-        - CACHE_NAME=linuxunittests.py27
-      script:
-        - ./build-support/bin/ci.sh -2lp
-
-    - <<: *py36_linux_test_config
-      name: "Unit tests (Py3.6 PEX)"
-      env:
-        - *py36_linux_test_config_env
-        - CACHE_NAME=linuxunittests.py36
-      script:
-        - ./build-support/bin/ci.sh -lp
-
-    - <<: *py37_linux_test_config
-      name: "Unit tests (Py3.7 PEX)"
-      env:
-        - *py37_linux_test_config_env
-        - CACHE_NAME=linuxunittests.py37
-      script:
-        - ./build-support/bin/ci.sh -7lp
-
-    - <<: *py27_linux_build_wheels_ucs2
-    - <<: *py27_linux_build_wheels_ucs4
-    - <<: *py36_linux_build_wheels
-
     - <<: *py27_osx_build_wheels_ucs2
     - <<: *py27_osx_build_wheels_ucs4
     - <<: *py36_osx_build_wheels
 
 {{#integration_shards}}
-    - <<: *py36_linux_test_config
-      name: "Integration tests - shard {{.}} (Py3.6 PEX)"
-      env:
-        - *py36_linux_test_config_env
-        - CACHE_NAME=integrationshard{{.}}
-      script:
-        - ./build-support/bin/ci.sh -c -i {{.}}/{{integration_shards_length}}
-
 {{/integration_shards}}
 {{#integration_shards}}
-    - <<: *py36_linux_test_config
-      name: "Integration tests with Pantsd - shard {{.}} (Py3.6 PEX)"
-      stage: *test_cron
-      env:
-        - *py36_linux_test_config_env
-        - *run_tests_under_pantsd
-        - CACHE_NAME=integrationshard{{.}}_pantsd
-      script:
-        - ./build-support/bin/ci.sh -c -i {{.}}/{{integration_shards_length}}
-
 {{/integration_shards}}
 {{#integration_shards}}
-    - <<: *py37_linux_test_config
-      name: "Integration tests - shard {{.}} (Py3.7 PEX)"
-      env:
-        - *py37_linux_test_config_env
-        - CACHE_NAME=integrationshard{{.}}
-      script:
-        - ./build-support/bin/ci.sh -c7 -i {{.}}/{{integration_shards_length}}
-
 {{/integration_shards}}
 {{#integration_shards}}
-    - <<: *py27_linux_test_config
-      name: "Integration tests - shard {{.}} (Py2.7 PEX)"
-      env:
-        - *py27_linux_test_config_env
-        - CACHE_NAME=cronshard{{.}}
-      script:
-        - ./build-support/bin/ci.sh -c2 -i {{.}}/{{integration_shards_length}}
-
 {{/integration_shards}}
-
-    - <<: *linux_rust_tests
-    - <<: *osx_rust_tests
-
-    - <<: *py27_linux_test_config
-      name: "Python contrib tests (Py2.7 PEX)"
-      stage: *test
-      env:
-        - *py27_linux_test_config_env
-        - CACHE_NAME=linuxcontribtests.py27
-      script:
-        - ./build-support/bin/ci.sh -2n
-
-    - <<: *py36_linux_test_config
-      name: "Python contrib tests (Py3.6 PEX)"
-      env:
-        - *py36_linux_test_config_env
-        - CACHE_NAME=linuxcontribtests.py36
-      script:
-        - ./build-support/bin/ci.sh -n
-
-    - <<: *py36_linux_test_config
-      name: "Python contrib tests with Pantsd (Py3.6 PEX)"
-      stage: *test_cron
-      env:
-        - *py36_linux_test_config_env
-        - *run_tests_under_pantsd
-        - CACHE_NAME=linuxcontribtests.py36
-      script:
-        - ./build-support/bin/ci.sh -n
-
-    - <<: *py37_linux_test_config
-      name: "Python contrib tests (Py3.7 PEX)"
-      env:
-        - *py37_linux_test_config_env
-        - CACHE_NAME=linuxcontribtests.py37
-      script:
-        - ./build-support/bin/ci.sh -7n
-
-    - <<: *py27_osx_10_12_sanity_check
-    - <<: *py36_osx_10_12_sanity_check
-    - <<: *py37_osx_10_12_sanity_check
-
-    - <<: *py27_osx_10_13_sanity_check
-    - <<: *py36_osx_10_13_sanity_check
-    - <<: *py37_osx_10_13_sanity_check
-
-    - <<: *py27_osx_platform_tests
-    - <<: *py36_osx_platform_tests
-    - <<: *py37_osx_platform_tests
-
-    - <<: *py27_jvm_tests
-    - <<: *py36_jvm_tests
-    - <<: *py37_jvm_tests
-
-    - <<: *py27_deploy_stable_multiplatform_pex
-    - <<: *py36_deploy_stable_multiplatform_pex
-
-    - <<: *py27_deploy_unstable_multiplatform_pex
-    - <<: *py36_deploy_unstable_multiplatform_pex
 
 deploy:
   # Deploy whatever a previous stage has left in dist/deploy.
