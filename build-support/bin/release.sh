@@ -88,7 +88,14 @@ function run_pex() {
 
     pex="${pexdir}/pex"
 
-    curl -sSL "${PEX_DOWNLOAD_PREFIX}/v${PEX_VERSION}/pex" > "${pex}"
+    git clone 'https://github.com/cosmicexplorer/pex' .pex_clone/
+    pushd .pex_clone/
+    pip install tox
+    git fetch origin put-self-interpreter-at-end-of-path
+    git checkout put-self-interpreter-at-end-of-path origin/put-self-interpreter-at-end-of-path
+    tox -e package
+    popd
+    cp .pex_clone/dist/pex "${pex}"
     chmod +x "${pex}"
     "${pex}" "$@"
   )
