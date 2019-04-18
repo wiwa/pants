@@ -214,6 +214,7 @@ base_osx_config: &base_osx_config
   before_install:
     - curl -L https://github.com/stedolan/jq/releases/download/jq-1.5/jq-osx-amd64 -o /usr/local/bin/jq
     - chmod 755 /usr/local/bin/jq
+    - pip install future==0.17.1
     - ./build-support/bin/install_aws_cli_for_ci.sh
     - ./build-support/bin/install_python_for_ci.sh "${PYENV_PY36_VERSION}"
 
@@ -243,6 +244,7 @@ py37_osx_config: &py37_osx_config
   before_install:
     - curl -L https://github.com/stedolan/jq/releases/download/jq-1.5/jq-osx-amd64 -o /usr/local/bin/jq
     - chmod 755 /usr/local/bin/jq
+    - pip install future==0.17.1
     - ./build-support/bin/install_aws_cli_for_ci.sh
     - ./build-support/bin/install_python_for_ci.sh "${PYENV_PY37_VERSION}"
 
@@ -611,6 +613,7 @@ py27_osx_build_wheels_ucs4: &py27_osx_build_wheels_ucs4
   before_install:
     - curl -L https://github.com/stedolan/jq/releases/download/jq-1.5/jq-osx-amd64 -o /usr/local/bin/jq
     - chmod 755 /usr/local/bin/jq
+    - pip install future==0.17.1
     - ./build-support/bin/install_aws_cli_for_ci.sh
     - ./build-support/bin/install_python_for_ci.sh ${PYTHON_27_VERSION_UCS4} ${PYENV_PY36_VERSION}
   script:

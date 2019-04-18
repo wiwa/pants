@@ -2,7 +2,7 @@
 # Copyright 2014 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-set -e
+set -euxo pipefail
 
 ROOT=$(cd $(dirname "${BASH_SOURCE[0]}") && cd "$(git rev-parse --show-toplevel)" && pwd)
 source ${ROOT}/build-support/common.sh
@@ -219,8 +219,6 @@ function build_pants_packages() {
   pants_version_set "${version}"
 
   start_travis_section "${NAME}" "Building packages"
-  set -e
-  run_packages_script build_and_print "${version}"
   packages=($(run_packages_script build_and_print "${version}"))
   for package in "${packages[@]}"
   do
