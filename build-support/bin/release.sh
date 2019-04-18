@@ -92,7 +92,7 @@ function run_pex() {
     pushd .pex_clone/
     pip install tox
     git fetch origin put-self-interpreter-at-end-of-path
-    git checkout put-self-interpreter-at-end-of-path origin/put-self-interpreter-at-end-of-path
+    git checkout -b put-self-interpreter-at-end-of-path FETCH_HEAD
     tox -e package
     popd
     cp .pex_clone/dist/pex "${pex}"
