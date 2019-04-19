@@ -97,7 +97,7 @@ function run_pex() {
     popd
     cp .pex_clone/dist/pex "${pex}"
     chmod +x "${pex}"
-    "${pex}" "$@"
+    PEX_VERBOSE=9 "${pex}" -vvvvvvvvv "$@"
   )
 }
 
