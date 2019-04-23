@@ -139,7 +139,9 @@ class Executor(AbstractClass):
     if main == 'org.pantsbuild.zinc.compiler.Main':
       trace_output_dir = os.path.join(get_buildroot(), 'native-image-traces')
       cmd = [
-        self._distribution.java,
+        '/Users/dmcclanahan/Downloads/openjdk1.8.0_202-jvmci-0.58/Contents/Home/bin/java',
+        # '/Users/dmcclanahan/.cache/pants/bin/graal/mac/10.13/1.0.0-rc15/graal/graalvm-ce-1.0.0-rc15/Contents/Home/bin/java',
+        # self._distribution.java,
         '-agentlib:native-image-agent=config-merge-dir={}'.format(trace_output_dir),
       ]
       logger.info('beginning of java cmd with native-image tracing: {}'.format(safe_shlex_join(cmd)))

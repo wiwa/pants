@@ -284,12 +284,14 @@ class JvmCompile(CompilerOptionSetsMixin, NailgunTaskBase):
     Subclasses may have more than one type of context."""
     return ccs
 
+  @property
+  def _jvm_options(self):
+    """JVM options for running the compiler."""
+    return self.get_options().jvm_options
+
   def __init__(self, *args, **kwargs):
     super(JvmCompile, self).__init__(*args, **kwargs)
     self._targets_to_compile_settings = None
-
-    # JVM options for running the compiler.
-    self._jvm_options = self.get_options().jvm_options
 
     self._args = list(self.get_options().args)
     if self.get_options().warnings:
