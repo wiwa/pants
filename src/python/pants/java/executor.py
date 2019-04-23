@@ -261,13 +261,11 @@ class SubprocessExecutor(Executor):
     # stdin should pass it explicitly.
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
-    env = subprocess_args.pop('env', {}).copy()
-    env['LD_LIBRARY_PATH'] = '/Users/dmcclanahan/tools/graal/substratevm'
     with self._maybe_scrubbed_env():
       logger.debug('Executing: {cmd} args={args} at cwd={cwd}'
                    .format(cmd=' '.join(cmd), args=subprocess_args, cwd=cwd))
       try:
         return subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=stdout, stderr=stderr,
-                                env=env, **subprocess_args)
+                                **subprocess_args)
       except OSError as e:
         raise self.Error('Problem executing {0}: {1}'.format(self._distribution.java, e))
