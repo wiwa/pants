@@ -46,7 +46,6 @@ class SchedulerTestBase(object):
 
   def mk_scheduler(self,
                    rules=None,
-                   union_rules=None,
                    project_tree=None,
                    work_dir=None,
                    include_trace_on_error=True):
@@ -60,7 +59,6 @@ class SchedulerTestBase(object):
                           work_dir,
                           local_store_dir,
                           rules,
-                          union_rules,
                           DEFAULT_EXECUTION_OPTIONS,
                           include_trace_on_error=include_trace_on_error)
     return scheduler.new_session()

@@ -6,7 +6,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 import logging
 from builtins import object, str
-from collections import OrderedDict, namedtuple
+from collections import namedtuple
 
 from twitter.common.collections import OrderedSet
 
@@ -38,7 +38,6 @@ class BuildConfiguration(object):
     self._exposed_context_aware_object_factory_by_alias = {}
     self._optionables = OrderedSet()
     self._rules = OrderedSet()
-    self._union_rules = OrderedDict()
 
   def registered_aliases(self):
     """Return the registered aliases exposed in BUILD files.
@@ -153,13 +152,10 @@ class BuildConfiguration(object):
       raise TypeError('The rules must be an iterable, given {!r}'.format(rules))
 
     # "Index" the rules to normalize them and expand their dependencies.
-    normalized_rules = RuleIndex.create(rules).normalized_rules()
-    indexed_rules = normalized_rules.rules
-    union_rules = normalized_rules.union_rules
+    indexed_rules = RuleIndex.create(rules).normalized_rules()
 
     # Store the rules and record their dependency Optionables.
     self._rules.update(indexed_rules)
-    self._union_rules.update(union_rules)
     dependency_optionables = {do
                               for rule in indexed_rules
                               for do in rule.dependency_optionables
@@ -169,16 +165,9 @@ class BuildConfiguration(object):
   def rules(self):
     """Returns the registered rules.
 
-    :rtype: list
+    :rtype list
     """
     return list(self._rules)
-
-  def union_rules(self):
-    """Returns a mapping of registered union base types -> [a list of union member types].
-
-    :rtype: OrderedDict
-    """
-    return self._union_rules
 
   @memoized_method
   def _get_addressable_factory(self, target_type, alias):

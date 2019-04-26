@@ -87,7 +87,7 @@ def init_native():
   return Native()
 
 
-def create_scheduler(rules, union_rules=None, validate=True, native=None):
+def create_scheduler(rules, validate=True, native=None):
   """Create a Scheduler."""
   native = native or init_native()
   return Scheduler(
@@ -96,7 +96,6 @@ def create_scheduler(rules, union_rules=None, validate=True, native=None):
     './.pants.d',
     safe_mkdtemp(),
     rules,
-    union_rules,
     execution_options=DEFAULT_EXECUTION_OPTIONS,
     validate=validate,
   )
