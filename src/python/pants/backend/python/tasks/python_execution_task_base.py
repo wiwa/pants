@@ -83,7 +83,7 @@ class PythonExecutionTaskBase(ResolveRequirementsTaskBase):
     """
     return ()
 
-  def create_pex(self, pex_info=None):
+  def create_pex(self, pex_info=None, pin_selected_interpreter=False):
     """Returns a wrapped pex that "merges" the other pexes via PEX_PATH."""
     relevant_targets = self.context.targets(
       lambda tgt: isinstance(tgt, (
@@ -116,8 +116,12 @@ class PythonExecutionTaskBase(ResolveRequirementsTaskBase):
           # Add the extra requirements first, so they take precedence over any colliding version
           # in the target set's dependency closure.
           pexes = [extra_requirements_pex] + pexes
-        constraints = {constraint for rt in relevant_targets if is_python_target(rt)
-                       for constraint in PythonSetup.global_instance().compatibility_or_constraints(rt)}
+
+        if pin_selected_interpreter:
+          constraints = {str(interpreter.identity.requirement)}
+        else:
+          constraints = {constraint for rt in relevant_targets if is_python_target(rt)
+                         for constraint in PythonSetup.global_instance().compatibility_or_constraints(rt)}
 
         with self.merged_pex(path, pex_info, interpreter, pexes, constraints) as builder:
           for extra_file in self.extra_files():
