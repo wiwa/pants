@@ -76,10 +76,9 @@ class RscCompileTest(TaskTestBase):
       dependee_graph = self.construct_dependee_graph_str(jobs, task)
       print(dependee_graph)
       # TODO: remove the dep for zinc_against_rsc from rsc and fix these tests!!!
+      # TODO: fix the output to make it clear what dependencies are being represented!
       self.assertEqual(dedent("""
-                     rsc(java/classpath:java_lib) -> {
-                       zinc_against_rsc(java/classpath:java_lib)
-                     }
+      rsc(java/classpath:java_lib) -> {}
                      zinc_against_rsc(java/classpath:java_lib) -> {}
                      zinc(scala/classpath:scala_lib) -> {}""").strip(),
         dependee_graph)

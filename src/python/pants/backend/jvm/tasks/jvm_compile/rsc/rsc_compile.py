@@ -154,6 +154,12 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
       for workflow in self.JvmCompileWorkflowType.all_variants
     }
 
+  """
+  scala_library(
+    tags = {'use-compiler:rsc-then-zinc'},
+  )
+  """
+
   @classmethod
   def register_options(cls, register):
     super(RscCompile, cls).register_options(register)
@@ -201,6 +207,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
       self.NAILGUN: lambda: self._nailgunnable_combined_classpath,
     })()
 
+  # NB: Override of ZincCompile/JvmCompile method!
   def register_extra_products_from_contexts(self, targets, compile_contexts):
     super(RscCompile, self).register_extra_products_from_contexts(targets, compile_contexts)
     def pathglob_for(filename):
@@ -292,6 +299,8 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
   def _zinc_key_for_target(self, target, workflow):
     return workflow.resolve_for_enum_variant({
       'zinc-only': lambda: 'zinc({})'.format(target.address.spec),
+      # TODO: zinc_against_rsc() is very incorrect, there's no chance of collision if we just do
+      # zinc({}) here too.
       'rsc-then-zinc': lambda: 'zinc_against_rsc({})'.format(target.address.spec),
     })()
 
@@ -392,6 +401,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
       # Update the products with the latest classes.
       self.register_extra_products_from_contexts([ctx.target], compile_contexts)
 
+    ### Create Jobs for ExecutionGraph
     rsc_jobs = []
     zinc_jobs = []
 
@@ -399,7 +409,10 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     compile_target = ivts.target
     rsc_compile_context, zinc_compile_context = compile_contexts[compile_target]
 
+    # TODO: ???/explain theory of operation
+
     def all_zinc_rsc_invalid_dep_keys(invalid_deps):
+      """Get the rsc key for an rsc-compatible target, or the zinc key for a zinc-only target."""
       for tgt in invalid_deps:
         # None can occur for e.g. JarLibrary deps, which we don't need to compile as they are
         # populated in the resolve goal.
@@ -456,7 +469,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     # - Java zinc compile jobs depend on the zinc compiles of their dependencies, because we can't
     #   generate jars that make javac happy at this point.
     workflow.resolve_for_enum_variant({
-      # NB: zinc-only zinc jobs run zinc and depend on zinc compile outputs.
+      # NB: zinc-only zinc jobs run zinc and depend on rsc and/or zinc compile outputs.
       'zinc-only': lambda: zinc_jobs.append(
         make_zinc_job(
           compile_target,
@@ -464,7 +477,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           output_products=[
             runtime_classpath_product,
             self.context.products.get_data('rsc_classpath')],
-          dep_keys=only_zinc_invalid_dep_keys(invalid_dependencies))),
+          dep_keys=list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)))),
       'rsc-then-zinc': lambda: zinc_jobs.append(
         # NB: rsc-then-zinc jobs run zinc and depend on both rsc and zinc compile outputs.
         make_zinc_job(
@@ -473,13 +486,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           output_products=[
             runtime_classpath_product,
           ],
-          # TODO: remove this dep and fix tests!!!
-          dep_keys=[
-            # TODO we could remove the dependency on the rsc target in favor of bumping
-            # the cache separately. We would need to bring that dependency back for
-            # sub-target parallelism though.
-            self._rsc_key_for_target(compile_target)
-          ] + list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies))
+          dep_keys=list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)),
         )),
     })()
 
