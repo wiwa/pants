@@ -13,6 +13,7 @@ from future.utils import PY3, text_type
 from twitter.common.collections import OrderedSet
 
 from pants.backend.jvm.subsystems.dependency_context import DependencyContext  # noqa
+from pants.backend.jvm.subsystems.scala_platform import ScalaPlatform
 from pants.backend.jvm.subsystems.shader import Shader
 from pants.backend.jvm.targets.jvm_target import JvmTarget
 from pants.backend.jvm.tasks.classpath_entry import ClasspathEntry
@@ -125,7 +126,11 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
   def implementation_version(cls):
     return super(RscCompile, cls).implementation_version() + [('RscCompile', 172)]
 
-  class JvmCompileWorkflowType(enum(['zinc-only', 'rsc-then-zinc'])):
+  @classmethod
+  def subsystem_dependencies(cls):
+    return super(RscCompile, cls).subsystem_dependencies() + (ScalaPlatform,)
+
+  class JvmCompileWorkflowType(enum(['zinc-only', 'zinc-java', 'rsc-then-zinc'])):
     """Target classifications used to correctly schedule Zinc and Rsc jobs.
 
     There are some limitations we have to work around before we can compile everything through Rsc
@@ -235,6 +240,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
       if rsc_cc.workflow is not None:
         cp_entries = rsc_cc.workflow.resolve_for_enum_variant({
           'zinc-only': lambda : confify([compile_cc.jar_file]),
+          'zinc-java': lambda : confify([compile_cc.jar_file]),
           'rsc-then-zinc': lambda : confify(
             to_classpath_entries([rsc_cc.rsc_jar_file], self.context._scheduler)),
         })()
@@ -275,6 +281,9 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
   @memoized_method
   def _classify_target_compile_workflow(self, target):
     """Return the compile workflow to use for this target."""
+    java_sources = list(getattr(target, 'java_sources', []))
+    if java_sources or target.has_sources('.java'):
+      return self.JvmCompileWorkflowType.zinc_java
     if target.has_sources('.java') or target.has_sources('.scala'):
       return self.get_scalar_mirrored_target_option('workflow', target)
     return None
@@ -283,6 +292,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     # used for jobs that are either rsc jobs or zinc jobs run against rsc
     return workflow.resolve_for_enum_variant({
       'zinc-only': lambda: self._zinc_key_for_target(target, workflow),
+      'zinc-java': lambda: self._zinc_key_for_target(target, workflow),
       'rsc-then-zinc': lambda: self._rsc_key_for_target(target),
     })()
 
@@ -292,6 +302,9 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
   def _zinc_key_for_target(self, target, workflow):
     return workflow.resolve_for_enum_variant({
       'zinc-only': lambda: 'zinc({})'.format(target.address.spec),
+      'zinc-java': lambda: 'zinc_java({})'.format(target.address.spec),
+      # TODO: zinc_against_rsc() is very incorrect, there's no chance of collision if we just do
+      # zinc({}) here too.
       'rsc-then-zinc': lambda: 'zinc_against_rsc({})'.format(target.address.spec),
     })()
 
@@ -354,7 +367,11 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
             classpath_rel_jdk = rsc_classpath_rel + jdk_libs_rel
             return (merged_sources_and_jdk_digest, classpath_rel_jdk)
           def nonhermetic_digest_classpath():
-            classpath_abs_jdk = rsc_classpath_rel + self._jdk_libs_abs(distribution)
+            scalac_cp_abs = [
+              e.path for e in
+              ScalaPlatform.global_instance().compiler_classpath_entries(self.context.products, self.context._scheduler)
+            ]
+            classpath_abs_jdk = rsc_classpath_rel + self._jdk_libs_abs(distribution) + scalac_cp_abs
             return ((EMPTY_DIRECTORY_DIGEST), classpath_abs_jdk)
 
           (input_digest, classpath_entry_paths) = self.execution_strategy_enum.resolve_for_enum_variant({
@@ -448,6 +465,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     workflow = rsc_compile_context.workflow
     workflow.resolve_for_enum_variant({
       'zinc-only': lambda: None,
+      'zinc-java': lambda: None,
       'rsc-then-zinc': lambda: rsc_jobs.append(make_rsc_job(compile_target, invalid_dependencies)),
     })()
 
@@ -464,7 +482,15 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           output_products=[
             runtime_classpath_product,
             self.context.products.get_data('rsc_classpath')],
-          dep_keys=only_zinc_invalid_dep_keys(invalid_dependencies))),
+          dep_keys=list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)))),
+      'zinc-java': lambda: zinc_jobs.append(
+        make_zinc_job(
+          compile_target,
+          input_product_key='runtime_classpath',
+          output_products=[
+            runtime_classpath_product,
+            self.context.products.get_data('rsc_classpath')],
+          dep_keys=list(only_zinc_invalid_dep_keys(invalid_dependencies)))),
       'rsc-then-zinc': lambda: zinc_jobs.append(
         # NB: rsc-then-zinc jobs run zinc and depend on both rsc and zinc compile outputs.
         make_zinc_job(
@@ -473,13 +499,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           output_products=[
             runtime_classpath_product,
           ],
-          # TODO: remove this dep and fix tests!!!
-          dep_keys=[
-            # TODO we could remove the dependency on the rsc target in favor of bumping
-            # the cache separately. We would need to bring that dependency back for
-            # sub-target parallelism though.
-            self._rsc_key_for_target(compile_target)
-          ] + list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies))
+          dep_keys= list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies))
         )),
     })()
 
@@ -645,5 +665,6 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     """
     return contexts[compile_target][0].workflow.resolve_for_enum_variant({
       'zinc-only': lambda : contexts[dep][0].workflow == self.JvmCompileWorkflowType.rsc_then_zinc,
+      'zinc-java': lambda : contexts[dep][0].workflow == self.JvmCompileWorkflowType.rsc_then_zinc,
       'rsc-then-zinc': lambda : False
     })()
