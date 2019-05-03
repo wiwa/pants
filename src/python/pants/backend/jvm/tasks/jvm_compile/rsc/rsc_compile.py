@@ -13,6 +13,7 @@ from future.utils import PY3, text_type
 from twitter.common.collections import OrderedSet
 
 from pants.backend.jvm.subsystems.dependency_context import DependencyContext  # noqa
+from pants.backend.jvm.subsystems.scala_platform import ScalaPlatform
 from pants.backend.jvm.subsystems.shader import Shader
 from pants.backend.jvm.targets.jvm_target import JvmTarget
 from pants.backend.jvm.tasks.classpath_entry import ClasspathEntry
@@ -124,6 +125,10 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
   @classmethod
   def implementation_version(cls):
     return super(RscCompile, cls).implementation_version() + [('RscCompile', 172)]
+
+  @classmethod
+  def subsystem_dependencies(cls):
+    return super(RscCompile, cls).subsystem_dependencies() + (ScalaPlatform,)
 
   class JvmCompileWorkflowType(enum(['zinc-only', 'zinc-java', 'rsc-then-zinc'])):
     """Target classifications used to correctly schedule Zinc and Rsc jobs.
@@ -369,7 +374,11 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
             classpath_rel_jdk = rsc_classpath_rel + jdk_libs_rel
             return (merged_sources_and_jdk_digest, classpath_rel_jdk)
           def nonhermetic_digest_classpath():
-            classpath_abs_jdk = rsc_classpath_rel + self._jdk_libs_abs(distribution)
+            scalac_cp_abs = [
+              e.path for e in
+              ScalaPlatform.global_instance().compiler_classpath_entries(self.context.products, self.context._scheduler)
+            ]
+            classpath_abs_jdk = rsc_classpath_rel + self._jdk_libs_abs(distribution) + scalac_cp_abs
             return ((EMPTY_DIRECTORY_DIGEST), classpath_abs_jdk)
 
           (input_digest, classpath_entry_paths) = self.execution_strategy_enum.resolve_for_enum_variant({
@@ -655,18 +664,18 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
   def _jdk_libs_abs(self, nonhermetic_dist):
     return nonhermetic_dist.find_libs(self._JDK_LIB_NAMES)
 
-  # def _on_invalid_compile_dependency(self, dep, compile_target, contexts):
-  #   """Decide whether to continue searching for invalid targets to use in the execution graph.
+  def _on_invalid_compile_dependency(self, dep, compile_target, contexts):
+    """Decide whether to continue searching for invalid targets to use in the execution graph.
 
-  #   If a necessary dep is a rsc-then-zinc dep and the root is a zinc-only one, continue to recurse
-  #   because otherwise we'll drop the path between Zinc compile of the zinc-only target and a Zinc
-  #   compile of a transitive rsc-then-zinc dependency.
+    If a necessary dep is a rsc-then-zinc dep and the root is a zinc-only one, continue to recurse
+    because otherwise we'll drop the path between Zinc compile of the zinc-only target and a Zinc
+    compile of a transitive rsc-then-zinc dependency.
 
-  #   This is only an issue for graphs like J -> S1 -> S2, where J is a zinc-only target,
-  #   S1/2 are rsc-then-zinc targets and S2 must be on the classpath to compile J successfully.
-  #   """
-  #   return contexts[compile_target][0].workflow.resolve_for_enum_variant({
-  #     'zinc-only': lambda : contexts[dep][0].workflow == self.JvmCompileWorkflowType.rsc_then_zinc,
-  #     'zinc-java': lambda : contexts[dep][0].workflow == self.JvmCompileWorkflowType.rsc_then_zinc,
-  #     'rsc-then-zinc': lambda : False
-  #   })()
+    This is only an issue for graphs like J -> S1 -> S2, where J is a zinc-only target,
+    S1/2 are rsc-then-zinc targets and S2 must be on the classpath to compile J successfully.
+    """
+    return contexts[compile_target][0].workflow.resolve_for_enum_variant({
+      'zinc-only': lambda : contexts[dep][0].workflow == self.JvmCompileWorkflowType.rsc_then_zinc,
+      'zinc-java': lambda : contexts[dep][0].workflow == self.JvmCompileWorkflowType.rsc_then_zinc,
+      'rsc-then-zinc': lambda : False
+    })()
