@@ -284,7 +284,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     java_sources = list(getattr(target, 'java_sources', []))
     if java_sources or target.has_sources('.java'):
       return self.JvmCompileWorkflowType.zinc_java
-    if target.has_sources('.java') or target.has_sources('.scala'):
+    if target.has_sources('.scala'):
       return self.get_scalar_mirrored_target_option('workflow', target)
     return None
 
@@ -367,11 +367,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
             classpath_rel_jdk = rsc_classpath_rel + jdk_libs_rel
             return (merged_sources_and_jdk_digest, classpath_rel_jdk)
           def nonhermetic_digest_classpath():
-            scalac_cp_abs = [
-              e.path for e in
-              ScalaPlatform.global_instance().compiler_classpath_entries(self.context.products, self.context._scheduler)
-            ]
-            classpath_abs_jdk = rsc_classpath_rel + self._jdk_libs_abs(distribution) + scalac_cp_abs
+            classpath_abs_jdk = rsc_classpath_rel + self._jdk_libs_abs(distribution)
             return ((EMPTY_DIRECTORY_DIGEST), classpath_abs_jdk)
 
           (input_digest, classpath_entry_paths) = self.execution_strategy_enum.resolve_for_enum_variant({
