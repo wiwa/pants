@@ -77,10 +77,7 @@ class RscCompileTest(TaskTestBase):
       print(dependee_graph)
       # TODO: remove the dep for zinc_against_rsc from rsc and fix these tests!!!
       self.assertEqual(dedent("""
-                     rsc(java/classpath:java_lib) -> {
-                       zinc_against_rsc(java/classpath:java_lib)
-                     }
-                     zinc_against_rsc(java/classpath:java_lib) -> {}
+                     zinc_java(java/classpath:java_lib) -> {}
                      zinc(scala/classpath:scala_lib) -> {}""").strip(),
         dependee_graph)
 
@@ -116,10 +113,8 @@ class RscCompileTest(TaskTestBase):
       dependee_graph = self.construct_dependee_graph_str(jobs, task)
       print(dependee_graph)
       self.assertEqual(dedent("""
-                     zinc(java/classpath:java_lib) -> {}
-                     rsc(scala/classpath:scala_lib) -> {
-                       zinc_against_rsc(scala/classpath:scala_lib)
-                     }
+                     zinc_java(java/classpath:java_lib) -> {}
+                     rsc(scala/classpath:scala_lib) -> {}
                      zinc_against_rsc(scala/classpath:scala_lib) -> {}""").strip(),
         dependee_graph)
 
@@ -201,21 +196,18 @@ class RscCompileTest(TaskTestBase):
       dependee_graph = self.construct_dependee_graph_str(jobs, task)
 
       self.assertEqual(dedent("""
-                     zinc(java/classpath:java_lib) -> {}
+                     zinc_java(java/classpath:java_lib) -> {}
                      rsc(scala/classpath:scala_lib) -> {
-                       zinc_against_rsc(scala/classpath:scala_lib)
-                     }
-                     zinc_against_rsc(scala/classpath:scala_lib) -> {
                        zinc(scala/classpath:scala_test)
                      }
+                     zinc_against_rsc(scala/classpath:scala_lib) -> {}
                      rsc(scala/classpath:scala_dep) -> {
                        rsc(scala/classpath:scala_lib),
                        zinc_against_rsc(scala/classpath:scala_lib),
-                       zinc_against_rsc(scala/classpath:scala_dep)
+                       zinc(scala/classpath:scala_test)
                      }
                      zinc_against_rsc(scala/classpath:scala_dep) -> {
-                       zinc(java/classpath:java_lib),
-                       zinc(scala/classpath:scala_test)
+                       zinc_java(java/classpath:java_lib)
                      }
                      zinc(scala/classpath:scala_test) -> {}""").strip(),
         dependee_graph)
@@ -261,9 +253,9 @@ class RscCompileTest(TaskTestBase):
       dependee_graph = self.construct_dependee_graph_str(jobs, task)
 
       self.assertEqual(dedent("""
-                     zinc(java/classpath:java_lib) -> {}
-                     zinc(scala/classpath:scala_with_direct_java_sources) -> {}
-                     zinc(scala/classpath:scala_with_indirect_java_sources) -> {}""").strip(),
+                     zinc_java(java/classpath:java_lib) -> {}
+                     zinc_java(scala/classpath:scala_with_direct_java_sources) -> {}
+                     zinc_java(scala/classpath:scala_with_indirect_java_sources) -> {}""").strip(),
         dependee_graph)
 
   def test_desandbox_fn(self):
