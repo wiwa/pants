@@ -19,14 +19,24 @@ class CompileContext(object):
   """
 
   def __init__(self, target, analysis_file, classes_dir, jar_file,
-               log_dir, args_file, sources):
+               log_dir, argsfile_opts, argsfile_srcs, sources, batch_size):
     self.target = target
     self.analysis_file = analysis_file
     self.classes_dir = classes_dir
     self.jar_file = jar_file
     self.log_dir = log_dir
-    self.args_file = args_file
+    self.argsfile_opts = argsfile_opts
+    self.argsfile_srcs = argsfile_srcs
     self.sources = sources
+    self.batch_size = batch_size
+
+  @property
+  def is_batched(self):
+    return self.batch_size > 0
+
+  @property
+  def argsfiles(self):
+    return [self.argsfile_opts, self.argsfile_srcs]
 
   @contextmanager
   def open_jar(self, mode):

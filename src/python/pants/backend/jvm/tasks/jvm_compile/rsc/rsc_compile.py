@@ -93,11 +93,12 @@ class RscCompileContext(CompileContext):
                rsc_jar_file,
                jar_file,
                log_dir,
-               args_file,
+               argsfile_opts,
+               argsfile_srcs,
                sources,
                workflow):
     super(RscCompileContext, self).__init__(target, analysis_file, classes_dir, jar_file,
-                                               log_dir, args_file, sources)
+                                               log_dir, argsfile_opts, argsfile_srcs, sources, batch_size=0)
     self.workflow = workflow
     self.rsc_jar_file = rsc_jar_file
 
@@ -167,7 +168,9 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     register('--workflow', type=cls.JvmCompileWorkflowType,
       default=cls.JvmCompileWorkflowType.rsc_and_zinc, metavar='<workflow>',
       help='The workflow to use to compile JVM targets.')
-
+    register('--batch-size', type=int, default=0,
+             help='A batch size to break compatible targets into for parallel compilation '
+                  'or 0 to disable batching.')
     register('--extra-rsc-args', type=list, default=[],
              help='Extra arguments to pass to the rsc invocation.')
 
@@ -377,12 +380,12 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           })()
 
           target_sources = ctx.sources
-          args = [
+          opts_args = [
                    '-cp', os.pathsep.join(classpath_entry_paths),
                    '-d', rsc_jar_file_relative_path,
-                 ] + self.get_options().extra_rsc_args + target_sources
+                 ] + self.get_options().extra_rsc_args
 
-          self.write_argsfile(ctx, args)
+          self.write_argsfiles(ctx, opts_args, target_sources)
 
           self._runtool(distribution, input_digest, ctx)
 
@@ -406,6 +409,9 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     merged_compile_context = compile_contexts[compile_target]
     rsc_compile_context = merged_compile_context.rsc_cc
     zinc_compile_context = merged_compile_context.zinc_cc
+
+    # Batching requires a dependency on the rsc output of the target.
+    batched_deps = [self._rsc_key_for_target(compile_target)] if zinc_compile_context.is_batched else []
 
     def all_zinc_rsc_invalid_dep_keys(invalid_deps):
       """Get the rsc key for an rsc-and-zinc target, or the zinc key for a zinc-only target."""
@@ -504,7 +510,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           output_products=[
             runtime_classpath_product,
           ],
-          dep_keys=list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)),
+          dep_keys=list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)) + batched_deps,
         )),
     })()
 
@@ -517,6 +523,16 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
 
   def select_runtime_context(self, merged_compile_context):
     return merged_compile_context.zinc_cc
+
+  def _compute_batch_size(self, sources, jvm_compile_workflow):
+    if jvm_compile_workflow != self.JvmCompileWorkflowType.rsc_and_zinc:
+      # Can only batch for scala.
+      return 0
+    batch_size = self.get_options().batch_size
+    if batch_size == 0 or len(sources) < batch_size:
+      # Don't batch if it's disabled, or if there aren't enough sources.
+      return 0
+    return batch_size
 
   def create_compile_context(self, target, target_workdir):
     # workdir layout:
@@ -531,17 +547,19 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     sources = self._compute_sources_for_target(target)
     rsc_dir = os.path.join(target_workdir, "rsc")
     zinc_dir = os.path.join(target_workdir, "zinc")
+    workflow = self._classify_target_compile_workflow(target)
     return self.RscZincMergedCompileContexts(
       rsc_cc=RscCompileContext(
         target=target,
         analysis_file=None,
         classes_dir=None,
         jar_file=None,
-        args_file=os.path.join(rsc_dir, 'rsc_args'),
+        argsfile_opts=os.path.join(rsc_dir, 'rsc_opts_args'),
+        argsfile_srcs=os.path.join(rsc_dir, 'rsc_srcs_args'),
         rsc_jar_file=ClasspathEntry(os.path.join(rsc_dir, 'm.jar')),
         log_dir=os.path.join(rsc_dir, 'logs'),
         sources=sources,
-        workflow=self._classify_target_compile_workflow(target),
+        workflow=workflow,
       ),
       zinc_cc=CompileContext(
         target=target,
@@ -549,8 +567,10 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
         classes_dir=ClasspathEntry(os.path.join(zinc_dir, 'classes'), None),
         jar_file=ClasspathEntry(os.path.join(zinc_dir, 'z.jar'), None),
         log_dir=os.path.join(zinc_dir, 'logs'),
-        args_file=os.path.join(zinc_dir, 'zinc_args'),
+        argsfile_opts=os.path.join(zinc_dir, 'zinc_opts_args'),
+        argsfile_srcs=os.path.join(zinc_dir, 'zinc_srcs_args'),
         sources=sources,
+        batch_size=self._compute_batch_size(sources, workflow)
       ))
 
   def _runtool_hermetic(self, main, tool_name, distribution, input_digest, ctx):
@@ -581,14 +601,9 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
         main,
       ]
 
-    argfile_snapshot, = self.context._scheduler.capture_snapshots([
-        PathGlobsAndRoot(
-          PathGlobs([fast_relpath(ctx.args_file, get_buildroot())]),
-          get_buildroot(),
-        ),
-      ])
+    argsfiles_snapshot = self.argsfiles_snapshot(ctx)
 
-    cmd = initial_args + ['@{}'.format(argfile_snapshot.files[0])]
+    cmd = initial_args + ['@{}'.format(argsfile) for argsfile in argsfiles_snapshot.files]
 
     pathglobs = list(tool_classpath)
 
@@ -603,7 +618,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
       ((path_globs_input_digest,) if path_globs_input_digest else ())
       + ((input_digest,) if input_digest else ())
       + tuple(s.directory_digest for s in additional_snapshots)
-      + (argfile_snapshot.directory_digest,))
+      + (argsfiles_snapshot.directory_digest,))
 
     epr = ExecuteProcessRequest(
       argv=tuple(cmd),
@@ -617,13 +632,10 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
       # ExecuteProcessRequest requires an existing, local jdk location.
       jdk_home=text_type(distribution.underlying_home),
     )
-    res = self.context.execute_process_synchronously_without_raising(
+    res = self.context.execute_process_synchronously_or_raise(
       epr,
       self.name(),
       [WorkUnitLabel.COMPILER])
-
-    if res.exit_code != 0:
-      raise TaskError(res.stderr, exit_code=res.exit_code)
 
     # TODO: parse the output of -Xprint:timings for rsc and write it to self._record_target_stats()!
 
@@ -640,7 +652,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
       classpath=classpath,
       main=main,
       jvm_options=self.get_options().jvm_options,
-      args=['@{}'.format(ctx.args_file)],
+      args=['@{}'.format(argsfile) for argsfile in ctx.argsfiles],
       workunit_name=tool_name,
       workunit_labels=[WorkUnitLabel.COMPILER],
       dist=distribution

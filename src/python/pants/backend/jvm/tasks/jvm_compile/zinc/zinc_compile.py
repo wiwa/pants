@@ -28,8 +28,8 @@ from pants.base.build_environment import get_buildroot
 from pants.base.exceptions import TaskError
 from pants.base.hash_utils import hash_file
 from pants.base.workunit import WorkUnitLabel
-from pants.engine.fs import DirectoryToMaterialize, PathGlobs, PathGlobsAndRoot
-from pants.engine.isolated_process import ExecuteProcessRequest
+from pants.engine.fs import DirectoryToMaterialize
+from pants.engine.isolated_process import ExecuteProcessRequest, ExecuteProcessResult
 from pants.util.contextutil import open_zip
 from pants.util.dirutil import fast_relpath
 from pants.util.memo import memoized_method, memoized_property
@@ -220,8 +220,10 @@ class BaseZincCompile(JvmCompile):
 
     if zinc_args is not None:
       for compile_context in compile_contexts:
-        with open(compile_context.args_file, 'r') as fp:
-          args = fp.read().split()
+        args = []
+        for argsfile in compile_context.argsfiles:
+          with open(argsfile, 'r') as fp:
+            args.extend(fp.read().split())
         zinc_args[compile_context.target] = args
 
   def create_empty_extra_products(self):
@@ -346,10 +348,8 @@ class BaseZincCompile(JvmCompile):
 
     jvm_options.extend(self._jvm_options)
 
-    zinc_args.extend(ctx.sources)
-
     self.log_zinc_file(ctx.analysis_file)
-    self.write_argsfile(ctx, zinc_args)
+    self.write_argsfiles(ctx, zinc_args, ctx.sources)
 
     return self.execution_strategy_enum.resolve_for_enum_variant({
       self.HERMETIC: lambda: self._compile_hermetic(
@@ -366,7 +366,7 @@ class BaseZincCompile(JvmCompile):
     exit_code = self.runjava(classpath=self.get_zinc_compiler_classpath(),
                              main=Zinc.ZINC_COMPILE_MAIN,
                              jvm_options=jvm_options,
-                             args=['@{}'.format(ctx.args_file)],
+                             args=['@{}'.format(argsfile) for argsfile in ctx.argsfiles],
                              workunit_name=self.name(),
                              workunit_labels=[WorkUnitLabel.COMPILER],
                              dist=self._zinc.dist)
@@ -445,38 +445,97 @@ class BaseZincCompile(JvmCompile):
         Zinc.ZINC_COMPILE_MAIN
       ]
 
-    argfile_snapshot, = self.context._scheduler.capture_snapshots([
-        PathGlobsAndRoot(
-          PathGlobs([fast_relpath(ctx.args_file, get_buildroot())]),
-          get_buildroot(),
-        ),
-      ])
-
-    argv = image_specific_argv + ['@{}'.format(argfile_snapshot.files[0])]
-    # TODO(#6071): Our ExecuteProcessRequest expects a specific string type for arguments,
-    # which py2 doesn't default to. This can be removed when we drop python 2.
-    argv = [text_type(arg) for arg in argv]
+    # NB: We don't support using argfiles for the sources of batched compiles, so sufficiently large
+    # batch sizes would fail. But batches that large wouldn't be a great idea anyway.
+    argsfiles_snapshot = self.argsfiles_snapshot(ctx, include_sources=(not ctx.is_batched))
 
     merged_input_digest = self.context._scheduler.merge_directories(
       tuple(s.directory_digest for s in snapshots) +
       directory_digests +
       native_image_snapshots +
-      (self.extra_resources_digest(ctx), argfile_snapshot.directory_digest)
+      (self.extra_resources_digest(ctx), argsfiles_snapshot.directory_digest)
     )
 
-    req = ExecuteProcessRequest(
-      argv=tuple(argv),
-      input_files=merged_input_digest,
-      output_files=(jar_file,) if self.get_options().use_classpath_jars else (),
-      output_directories=() if self.get_options().use_classpath_jars else (classes_dir,),
-      description="zinc compile for {}".format(ctx.target.address.spec),
-      jdk_home=self._zinc.underlying_dist.home,
-    )
-    res = self.context.execute_process_synchronously_or_raise(
-      req, self.name(), [WorkUnitLabel.COMPILER])
+    # Batches of args to run in parallel.
+    if ctx.is_batched:
+      def batch(list_to_batch, batch_size=0):
+        l = len(list_to_batch)
+        for chunk in range(0, l, batch_size):
+          yield list_to_batch[chunk:min(chunk + batch_size, l)]
+      batches = list(batch(ctx.sources, ctx.batch_size))
+      batched_extra_args = [
+          (sources, " (batch {} of {})".format(idx + 1, len(batches)))
+          for idx, sources in enumerate(batches)
+        ]
+    else:
+      # NB: One empty set of args: the sources are already supplied via the argsfiles.
+      batched_extra_args = [([], "")]
+
+    process_requests = []
+    for extra_args, slug in batched_extra_args:
+      argv = image_specific_argv + [
+          '@{}'.format(argsfile) for argsfile in argsfiles_snapshot.files
+        ] + extra_args
+      # TODO(#6071): Our ExecuteProcessRequest expects a specific string type for arguments,
+      # which py2 doesn't default to. This can be removed when we drop python 2.
+      argv = [text_type(arg) for arg in argv]
+
+      process_requests.append(ExecuteProcessRequest(
+        argv=tuple(argv),
+        input_files=merged_input_digest,
+        output_files=(jar_file,) if self.get_options().use_classpath_jars else (),
+        output_directories=() if self.get_options().use_classpath_jars else (classes_dir,),
+        description="zinc compile for {}{}".format(ctx.target.address.spec, slug),
+        jdk_home=self._zinc.underlying_dist.home,
+      ))
+
+    # Execute (and merge outputs, if necessary).
+    results = self.context.execute_processes_synchronously_or_raise(
+      process_requests, self.name(), [WorkUnitLabel.COMPILER])
+
+    output_digest = self.merge_output_digests(ctx, [r.output_directory_digest for r in results])
 
     # TODO: This should probably return a ClasspathEntry rather than a Digest
-    return res.output_directory_digest
+    return output_digest
+
+  def merge_output_digests(self, ctx, directory_digests):
+    if len(directory_digests) == 1:
+      return directory_digests[0]
+    if not self.get_options().use_classpath_jars:
+      return self.context._scheduler.merge_directories(directory_digests)
+    
+    # Rename all jars (so that they don't collide) and merge them into the same digest.
+    # TODO: Make this API parallel.
+    jar_file = fast_relpath(ctx.jar_file.path, get_buildroot())
+    suffixed_jar_files = []
+    directory_digests = list(directory_digests)
+    for idx in range(1, len(directory_digests)):
+      suffixed_jar_file = '{}.{}'.format(jar_file, idx)
+      suffixed_jar_files.append(suffixed_jar_file)
+      directory_digests[idx] = self.context._scheduler.rename_in_directory(
+          directory_digests[idx],
+          jar_file,
+          suffixed_jar_file,
+        )
+    all_jars_digest = self.context._scheduler.merge_directories(directory_digests)
+
+    # Merge the jars into a single jar.
+    result, = self.context._scheduler.product_request(ExecuteProcessResult, [
+        ExecuteProcessRequest(
+          argv=("/bin/bash", "-c", textwrap.dedent("""
+            /bin/mkdir .extracted
+            for appended_jar in {}; do
+              /usr/bin/unzip $appended_jar -d .extracted
+            done
+            cd .extracted
+            /usr/bin/zip -r -g ../{} .
+            """).format(' '.join(suffixed_jar_files), jar_file)),
+          description="merging output directories",
+          output_files=(jar_file,),
+          input_files=all_jars_digest,
+        )
+      ])
+    return result.output_directory_digest
 
   def get_zinc_compiler_classpath(self):
     """Get the classpath for the zinc compiler JVM tool.
