@@ -16,7 +16,7 @@ from pants.task.fmt_task_mixin import FmtTaskMixin
 from pants.task.lint_task_mixin import LintTaskMixin
 
 
-class ScalaFix(RewriteBase, JvmTask):
+class ScalaFix(RewriteBase):
   """Executes the scalafix tool."""
 
   _SCALAFIX_MAIN = 'scalafix.cli.Cli'
@@ -55,21 +55,14 @@ class ScalaFix(RewriteBase, JvmTask):
     if options.semantic:
       round_manager.require_data('runtime_classpath')
 
-  def _compute_classpath(self, targets):
-    if self.get_options().transitive:
-      return self.classpath(targets)
-    classpaths = self.context.products.get_data('runtime_classpath')
-    return [entry for _, entry in classpaths.get_for_targets(targets)]
-
   def invoke_tool(self, absolute_root, target_sources):
     args = []
     tool_classpath = self.tool_classpath('scalafix-tool-classpath')
     if tool_classpath:
       args.append('--tool-classpath={}'.format(os.pathsep.join(tool_classpath)))
     if self.get_options().semantic:
-      # If semantic checks are enabled, pass the relevant classpath entries for these
-      # targets.
-      classpath = self._compute_classpath({target for target, _ in target_sources})
+      # If semantic checks are enabled, we need the full classpath for these targets.
+      classpath = self.classpath({target for target, _ in target_sources})
       args.append('--sourceroot={}'.format(absolute_root))
       args.append('--classpath={}'.format(os.pathsep.join(classpath)))
     if self.get_options().configuration:
