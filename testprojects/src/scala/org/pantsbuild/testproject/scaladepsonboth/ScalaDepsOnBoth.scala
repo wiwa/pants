@@ -11,4 +11,6 @@ class ScalaDepsOnBoth {
       "ScalaDepsOnBoth calling ScalaWithJavaSources().example()")
     new ScalaWithJavaSources().example()
   }
+
+  def str = "hi"
 }

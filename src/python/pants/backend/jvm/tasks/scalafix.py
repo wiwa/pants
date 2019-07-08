@@ -16,7 +16,7 @@ from pants.task.fmt_task_mixin import FmtTaskMixin
 from pants.task.lint_task_mixin import LintTaskMixin
 
 
-class ScalaFix(RewriteBase):
+class ScalaFix(RewriteBase, JvmTask):
   """Executes the scalafix tool."""
 
   _SCALAFIX_MAIN = 'scalafix.cli.Cli'
@@ -36,8 +36,11 @@ class ScalaFix(RewriteBase):
     cls.register_jvm_tool(register,
                           'scalafix',
                           classpath=[
-                            JarDependency(org='ch.epfl.scala', name='scalafix-cli_2.11.12', rev='0.6.0-M16'),
+                            JarDependency(org='ch.epfl.scala', name='scalafix-cli_2.12.8', rev='0.9.4'),
+                            #JarDependency(org='com.twitter', name='rsc-rules_2.11', rev = "0.0.0-758-7ae5dd31"),
+                            # JarDependency(org='com.twitter', name='rsc-rules_2.12', rev = "0.0.0-780-e57a1c9c"),
                           ])
+    register('--args', type=list, fingerprint=True, default=[])
     cls.register_jvm_tool(register, 'scalafix-tool-classpath', classpath=[])
 
   @classmethod
@@ -48,14 +51,49 @@ class ScalaFix(RewriteBase):
   def source_extension(cls):
     return '.scala'
 
+
   @classmethod
   def prepare(cls, options, round_manager):
+    print("asfdf")
     super(ScalaFix, cls).prepare(options, round_manager)
+    round_manager.require_data('zinc_args') 
     # Only request a classpath if semantic checks are enabled.
     if options.semantic:
       round_manager.require_data('runtime_classpath')
+    print("fds")
+
+  def execute(self): 
+    print("wtf")
+    targets = self.context.targets()
+    targets_to_zinc_args = self.context.products.get_data('zinc_args') 
+
+    self.scalac_args = None
+
+    for t in targets:
+      zinc_args = targets_to_zinc_args[t]
+      args = []
+      for arg in zinc_args:
+        arg = arg.strip()
+        if arg.startswith('-S'):
+          args.append(arg[2:])
+      if not self.scalac_args and args:
+        self.scalac_args = args
+        break
+      
+    self.scalac_args = [a for a in self.scalac_args if a == "-Ywarn-unused"]
+
+    self.scalac_args.extend(self.get_options().args)
+
+    print()
+    print("\n\n".join(self.scalac_args))
+    super().execute()
+
+  def _compute_classpath(self, targets):
+      classpaths = self.context.products.get_data('runtime_classpath')
+      return [entry for _, entry in classpaths.get_for_targets(targets)]
 
   def invoke_tool(self, absolute_root, target_sources):
+    print("invoking")
     args = []
     tool_classpath = self.tool_classpath('scalafix-tool-classpath')
     if tool_classpath:
@@ -71,10 +109,15 @@ class ScalaFix(RewriteBase):
       args.append('--rules={}'.format(self.get_options().rules))
     if self.get_options().level == 'debug':
       args.append('--verbose')
+    if self.scalac_args:
+      args.append('--scalac-options')
+      args.append("['" + "','".join(self.scalac_args) + "']")
     args.extend(self.additional_args or [])
 
     args.extend(source for _, source in target_sources)
 
+    print('asd')
+    print(args)
     # Execute.
     return self.runjava(classpath=self.tool_classpath('scalafix'),
                         main=self._SCALAFIX_MAIN,
