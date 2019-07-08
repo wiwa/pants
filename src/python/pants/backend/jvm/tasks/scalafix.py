@@ -54,16 +54,13 @@ class ScalaFix(RewriteBase, JvmTask):
 
   @classmethod
   def prepare(cls, options, round_manager):
-    print("asfdf")
     super(ScalaFix, cls).prepare(options, round_manager)
     round_manager.require_data('zinc_args') 
     # Only request a classpath if semantic checks are enabled.
     if options.semantic:
       round_manager.require_data('runtime_classpath')
-    print("fds")
 
-  def execute(self): 
-    print("wtf")
+  def execute(self):
     targets = self.context.targets()
     targets_to_zinc_args = self.context.products.get_data('zinc_args') 
 
@@ -83,9 +80,6 @@ class ScalaFix(RewriteBase, JvmTask):
     self.scalac_args = [a for a in self.scalac_args if a == "-Ywarn-unused"]
 
     self.scalac_args.extend(self.get_options().args)
-
-    print()
-    print("\n\n".join(self.scalac_args))
     super().execute()
 
   def _compute_classpath(self, targets):
@@ -93,7 +87,6 @@ class ScalaFix(RewriteBase, JvmTask):
       return [entry for _, entry in classpaths.get_for_targets(targets)]
 
   def invoke_tool(self, absolute_root, target_sources):
-    print("invoking")
     args = []
     tool_classpath = self.tool_classpath('scalafix-tool-classpath')
     if tool_classpath:
@@ -116,8 +109,6 @@ class ScalaFix(RewriteBase, JvmTask):
 
     args.extend(source for _, source in target_sources)
 
-    print('asd')
-    print(args)
     # Execute.
     return self.runjava(classpath=self.tool_classpath('scalafix'),
                         main=self._SCALAFIX_MAIN,
