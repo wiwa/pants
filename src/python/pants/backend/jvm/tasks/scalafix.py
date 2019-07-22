@@ -100,13 +100,13 @@ class ScalaFix(RewriteBase):
       args.append('--rules={}'.format(self.get_options().rules))
     if self.get_options().level == 'debug':
       args.append('--verbose')
-    if self.scalac_args:
-      argsList = '["' + '","'.join(self.scalac_args) + '"]'
-      args.append('--scalac-options')
-      args.append(argsList)
-    args.extend(self.additional_args or [])
 
-    print(args)
+    # This is how you pass a list of strings to a single arg key...s
+    for a in self.scalac_args:
+      args.append('--scalac-options')
+      args.append(a)
+      
+    args.extend(self.additional_args or [])
 
     args.extend(source for _, source in target_sources)
 
