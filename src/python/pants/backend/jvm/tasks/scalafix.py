@@ -50,9 +50,30 @@ class ScalaFix(RewriteBase):
   @classmethod
   def prepare(cls, options, round_manager):
     super().prepare(options, round_manager)
+    round_manager.require_data('zinc_args') 
     # Only request a classpath if semantic checks are enabled.
     if options.semantic:
       round_manager.require_data('runtime_classpath')
+ 
+  def execute(self):
+    targets = self.context.targets()
+    targets_to_zinc_args = self.context.products.get_data('zinc_args') 
+
+    self.scalac_args = None
+    
+    for t in targets:
+      zinc_args = targets_to_zinc_args[t]
+      args = []
+      for arg in zinc_args:
+        arg = arg.strip()
+        if arg.startswith('-S'):
+          args.append(arg[2:])
+      # All targets will get the same scalac args
+      if not self.scalac_args and args:
+        self.scalac_args = args
+        break
+
+    super().execute()
 
   @staticmethod
   def _compute_classpath(runtime_classpath, targets):
@@ -79,7 +100,13 @@ class ScalaFix(RewriteBase):
       args.append('--rules={}'.format(self.get_options().rules))
     if self.get_options().level == 'debug':
       args.append('--verbose')
+    if self.scalac_args:
+      argsList = '["' + '","'.join(self.scalac_args) + '"]'
+      args.append('--scalac-options')
+      args.append(argsList)
     args.extend(self.additional_args or [])
+
+    print(args)
 
     args.extend(source for _, source in target_sources)
 

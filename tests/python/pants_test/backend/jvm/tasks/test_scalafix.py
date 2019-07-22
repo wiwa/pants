@@ -53,10 +53,11 @@ class ScalaFixIntegrationTest(PantsRunIntegrationTest):
   #     test_fix = self.run_pants(['lint', target], options)
   #     self.assert_success(test_fix)
 
-  def test_scalafix_options(self):
+  def test_scalafix_scalacoptions(self):
 
     rules = {'rules': 'RemoveUnused'}
     options = {
+      'compile.zinc': {'args': '+["-S-Ywarn-unused"]'},
       'lint.scalafix': rules,
       'fmt.scalafix': rules,
       'lint.scalastyle': {'skip': True}
