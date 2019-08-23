@@ -305,9 +305,6 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
       'rsc-and-zinc': lambda: 'zinc[rsc-and-zinc]({})'.format(target.address.spec),
     })()
 
-  def _write_to_cache_key_for_target(self, target):
-    return 'write_to_cache({})'.format(target.address.spec)
-
   def _check_cache_before_work(self, work_str, vts, ctx, counter, debug = False, work_fn = lambda: None):
     hit_cache = self.check_cache(vts, counter)
 
@@ -413,9 +410,6 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
       # Update the products with the latest classes.
       self.register_extra_products_from_contexts([ctx.target], compile_contexts)
 
-    def work_for_vts_write_to_cache(vts, ctx):
-      self._check_cache_before_work('Writing to cache for', vts, ctx, counter, debug=True)
-
     ### Create Jobs for ExecutionGraph
     rsc_jobs = []
     zinc_jobs = []
@@ -436,6 +430,16 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           # Rely on the results of zinc compiles for zinc-compatible targets
           yield self._key_for_target_as_dep(tgt, tgt_rsc_cc.workflow)
 
+    # The idea is we only want to update after both zinc and a possible rsc job has finished
+    rsc_and_zinc_counter = [0]
+    def write_to_cache_after_rsc_and_zinc(counter):
+      def inner():
+        if counter[0] > 0:
+          counter[0] -= 1
+        else:
+          ivts.update()
+      return inner
+
     def make_rsc_job(target, dep_targets):
       return Job(
         key=self._rsc_key_for_target(target),
@@ -450,6 +454,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
         # processed by rsc.
         dependencies=list(all_zinc_rsc_invalid_dep_keys(dep_targets)),
         size=self._size_estimator(rsc_compile_context.sources),
+        on_success=write_to_cache_after_rsc_and_zinc(rsc_and_zinc_counter)
       )
 
     def only_zinc_invalid_dep_keys(invalid_deps):
@@ -471,6 +476,10 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           CompositeProductAdder(*output_products)),
         dependencies=list(dep_keys),
         size=self._size_estimator(zinc_compile_context.sources),
+        # If compilation and analysis work succeeds, validate the vts.
+        # Otherwise, fail it.
+        on_success=write_to_cache_after_rsc_and_zinc(rsc_and_zinc_counter),
+        on_failure=ivts.force_invalidate
       )
 
     workflow = rsc_compile_context.workflow
@@ -488,11 +497,14 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
 
     # Create the rsc job.
     # Currently, rsc only supports outlining scala.
-    workflow.resolve_for_enum_variant({
-      'zinc-only': lambda: None,
-      'zinc-java': lambda: None,
+    rsc_job_maker = workflow.resolve_for_enum_variant({
+      'zinc-only': None,
+      'zinc-java': None,
       'rsc-and-zinc': lambda: rsc_jobs.append(make_rsc_job(compile_target, invalid_dependencies)),
-    })()
+    })
+    if rsc_job_maker:
+      rsc_and_zinc_counter[0] += 1
+      rsc_job_maker()
 
     # Create the zinc compile jobs.
     # - Scala zinc compile jobs depend on the results of running rsc on the scala target.
@@ -536,21 +548,6 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     })()
 
     all_jobs = rsc_jobs + zinc_jobs
-
-    if all_jobs:
-      write_to_cache_job = Job(
-          key=self._write_to_cache_key_for_target(compile_target),
-          fn=functools.partial(
-            work_for_vts_write_to_cache,
-            ivts,
-            rsc_compile_context,
-          ),
-          dependencies=[job.key for job in all_jobs],
-          # If compilation and analysis work succeeds, validate the vts.
-          # Otherwise, fail it.
-          on_success=ivts.update,
-          on_failure=ivts.force_invalidate)
-      all_jobs.append(write_to_cache_job)
 
     return all_jobs
 
