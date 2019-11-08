@@ -183,6 +183,25 @@ class ExecutionGraph:
 
     self._job_priority = self._compute_job_priorities(job_list)
 
+    # print("WAIT TO FIND DEPENDEE-LESS JOBS")
+    # size_ones = [j for j in jobs if j.size == 1]
+    
+    keys = [j.key for j in job_list]
+    dless = [k for k in keys if len(self._dependees[k]) == 0]
+    zincs = [d for d in dless if "zinc[outline-and-zinc]" in d]
+    print("lenzincs", len(zincs))
+    for z in zincs:
+      self._job_keys_as_scheduled.remove(z)
+      for j in self._dependees:
+        try:
+          self._dependees[j].remove(z)
+        except ValueError:
+          pass
+      # for j in self._jobs
+    #zincs2 = [d for d in zincs if len(self._dependees[d]) == 1]
+    # import pdb
+    # pdb.set_trace()
+
   def format_dependee_graph(self):
     def entry(key):
       dependees = self._dependees[key]

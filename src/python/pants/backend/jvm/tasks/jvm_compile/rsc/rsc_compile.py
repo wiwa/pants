@@ -553,7 +553,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
         # The rsc jobs depend on other rsc jobs, and on zinc jobs for targets that are not
         # processed by rsc.
         dependencies=[cache_doublecheck_key] + list(all_zinc_rsc_invalid_dep_keys(dep_targets)),
-        size=self._size_estimator(rsc_compile_context.sources),
+        size=1,
         options_scope=self.options_scope,
         target=target
       )
@@ -576,7 +576,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           compile_contexts,
           CompositeProductAdder(*output_products)),
         dependencies=[cache_doublecheck_key] + list(dep_keys),
-        size=self._size_estimator(zinc_compile_context.sources),
+        size=1,
         options_scope=self.options_scope,
         target=target
       )
@@ -690,7 +690,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
         options_scope=self.options_scope,
         target=compile_target)
 
-    all_jobs = cache_doublecheck_jobs + rsc_jobs + zinc_jobs + [write_to_cache_job]
+    all_jobs = cache_doublecheck_jobs + rsc_jobs + zinc_jobs # + [write_to_cache_job]
     return (all_jobs, len(compile_jobs))
 
   @dataclass(frozen=True)
