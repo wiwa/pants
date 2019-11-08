@@ -188,6 +188,9 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     register('--zinc-outline', type=bool, default=False,
              help='Outline via Zinc when workflow is outline-and-zinc instead of a standalone scalac tool. This allows outlining to happen in the same nailgun instance as zinc compiles.', fingerprint=True)
 
+    register('--outline-only', type=bool, default=False,
+             help='Skip all full scala compile where applicable; works only with workflow=outline-and-zinc and zinc-online.', fingerprint=True)
+
     cls.register_jvm_tool(
       register,
       'rsc',
@@ -614,6 +617,23 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
       self.JvmCompileWorkflowType.outline_and_zinc: lambda: rsc_jobs.append(make_outline_job(compile_target, invalid_dependencies)),
     })()
 
+    outline_only = self.get_options().outline_only
+    tags = compile_target.tags
+
+    force_zinc = 'use-compiler:zinc-only' in tags
+    
+    def asdf2():
+      if True or not outline_only:
+        zinc_jobs.append(
+          make_zinc_job(
+            compile_target,
+            input_product_key='rsc_mixed_compile_classpath',
+            output_products=[
+              runtime_classpath_product,
+            ],
+            dep_keys=list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)),
+          ))
+
     # Create the zinc compile jobs.
     # - Scala zinc compile jobs depend on the results of running rsc on the scala target.
     # - Java zinc compile jobs depend on the zinc compiles of their dependencies, because we can't
@@ -654,15 +674,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           dep_keys=list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)),
         )),
       # Should be the same as 'rsc-and-zinc' case
-      self.JvmCompileWorkflowType.outline_and_zinc: lambda: zinc_jobs.append(
-        make_zinc_job(
-          compile_target,
-          input_product_key='rsc_mixed_compile_classpath',
-          output_products=[
-            runtime_classpath_product,
-          ],
-          dep_keys=list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)),
-        )),
+      self.JvmCompileWorkflowType.outline_and_zinc: asdf2,
     })()
 
     compile_jobs = rsc_jobs + zinc_jobs
