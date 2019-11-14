@@ -343,15 +343,17 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     if workflow_override is not None:
       return self.JvmCompileWorkflowType(workflow_override)
 
-
+    topt =  self.get_scalar_mirrored_target_option('workflow', target)
     # scala_library() targets may have a `.java_sources` property.
     java_sources = getattr(target, 'java_sources', [])
     if java_sources or target.has_sources('.java'):
       # If there are any java sources to compile, treat it as a java library since rsc can't outline
       # java yet.
+      if topt == self.JvmCompileWorkflowType.outline_and_zinc:
+        return topt
       return self.JvmCompileWorkflowType.zinc_java
     if target.has_sources('.scala'):
-      return self.get_scalar_mirrored_target_option('workflow', target)
+      return topt
     return None
 
   def _key_for_target_as_dep(self, target, workflow):
@@ -368,6 +370,9 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
 
   def _outline_key_for_target(self, target):
     return 'outline({})'.format(target.address.spec)
+
+  def _outlinej_key_for_target(self, target):
+    return 'outline[JAVA]({})'.format(target.address.spec)
 
   def _zinc_key_for_target(self, target, workflow):
     return workflow.match({
@@ -388,7 +393,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
                           counter,
                           runtime_classpath_product):
 
-    def work_for_vts_rsc(vts, ctx):
+    def work_for_vts_rsc(vts, ctx, java):
       target = ctx.target
       tgt, = vts.targets
 
@@ -472,6 +477,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
             youtline_args = [
               "-Youtline",
               "-Ystop-after:pickler",
+              "-Ypickle-java",
               "-Ypickle-write",
               rsc_jar_file_relative_path,
             ]
@@ -536,9 +542,11 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
         dependencies=list(dep_keys),
         options_scope=self.options_scope)
 
-    def make_outline_job(target, dep_targets):
+    def make_outline_job(target, dep_targets, java=False):
       if workflow == self.JvmCompileWorkflowType.outline_and_zinc:
         target_key = self._outline_key_for_target(target)
+        if java:
+          target_key = self._outlinej_key_for_target(target)
       else:
         target_key = self._rsc_key_for_target(target)
       return Job(
@@ -549,6 +557,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           work_for_vts_rsc,
           ivts,
           rsc_compile_context,
+          java
         ),
         # The rsc jobs depend on other rsc jobs, and on zinc jobs for targets that are not
         # processed by rsc.
@@ -651,15 +660,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           dep_keys=list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)))),
       # NB: javac can't read rsc output yet, so we need it to depend strictly on zinc
       # compilations of dependencies.
-      self.JvmCompileWorkflowType.zinc_java: lambda: zinc_jobs.append(
-        make_zinc_job(
-          compile_target,
-          input_product_key='runtime_classpath',
-          output_products=[
-            runtime_classpath_product,
-            self.context.products.get_data('rsc_mixed_compile_classpath'),
-          ],
-          dep_keys=list(only_zinc_invalid_dep_keys(invalid_dependencies)))),
+      self.JvmCompileWorkflowType.zinc_java: lambda: rsc_jobs.append(make_outline_job(compile_target, invalid_dependencies, java=True)),
       self.JvmCompileWorkflowType.rsc_and_zinc: lambda: zinc_jobs.append(
         # NB: rsc-and-zinc jobs run zinc and depend on both rsc and zinc compile outputs.
         make_zinc_job(
