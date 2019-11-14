@@ -1,6 +1,36 @@
 # JVM artifacts that Pants itself depends on.
 # http://pantsbuild.github.io/dev_tasks.html#jvm-tool-bootstrapping
 
+SCALA_REV='2.12.10'
+
+jar_library(name = 'scalac',
+            jars = [
+              jar(org = 'org.scala-lang', name = 'scala-compiler', rev = SCALA_REV),
+            ],
+            dependencies=[
+              ':scala-reflect',
+              ':scala-library',
+            ])
+
+jar_library(name = 'scala-library',
+            jars = [
+              jar(org = 'org.scala-lang', name = 'scala-library', rev = SCALA_REV),
+            ],
+            scope='forced',)
+
+target(name = 'scala-repl',
+       dependencies=[
+         ':scalac',
+         ':scala-reflect',
+         ':scala-library',
+       ])
+
+jar_library(name = 'scala-reflect',
+            jars = [
+              jar(org = 'org.scala-lang', name = 'scala-reflect', rev = SCALA_REV, intransitive=True),
+            ])
+
+
 target(
   name = 'scala-js-cli',
   dependencies=[

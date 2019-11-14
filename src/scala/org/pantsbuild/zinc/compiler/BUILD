@@ -12,6 +12,7 @@ scala_library(
     publication_metadata=pants_library('The SBT incremental compiler for nailgun')
   ),
   dependencies=[
+    '//:scalac',
     '3rdparty/jvm/com/github/scopt',
     '3rdparty/jvm/com/martiansoftware:nailgun-server',
     '3rdparty/jvm/org/scala-lang/modules:scala-java8-compat',

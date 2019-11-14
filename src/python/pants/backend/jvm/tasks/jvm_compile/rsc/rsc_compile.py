@@ -296,7 +296,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
       if rsc_cc.workflow is not None:
         cp_entries = rsc_cc.workflow.match({
           self.JvmCompileWorkflowType.zinc_only: lambda: confify([self._classpath_for_context(zinc_cc)]),
-          self.JvmCompileWorkflowType.zinc_java: lambda: confify([self._classpath_for_context(zinc_cc)]),
+          self.JvmCompileWorkflowType.zinc_java: lambda: confify([rsc_cc.rsc_jar_file]),
           self.JvmCompileWorkflowType.rsc_and_zinc: lambda: confify([rsc_cc.rsc_jar_file]),
           self.JvmCompileWorkflowType.outline_and_zinc: lambda: confify([rsc_cc.rsc_jar_file]),
         })()
@@ -349,8 +349,8 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     if java_sources or target.has_sources('.java'):
       # If there are any java sources to compile, treat it as a java library since rsc can't outline
       # java yet.
-      if topt == self.JvmCompileWorkflowType.outline_and_zinc:
-        return topt
+      # if topt == self.JvmCompileWorkflowType.outline_and_zinc:
+      #   return topt
       return self.JvmCompileWorkflowType.zinc_java
     if target.has_sources('.scala'):
       return topt
@@ -360,7 +360,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     # used for jobs that are either rsc jobs or zinc jobs run against rsc
     return workflow.match({
       self.JvmCompileWorkflowType.zinc_only: lambda: self._zinc_key_for_target(target, workflow),
-      self.JvmCompileWorkflowType.zinc_java: lambda: self._zinc_key_for_target(target, workflow),
+      self.JvmCompileWorkflowType.zinc_java: lambda: self._outline_key_for_target(target),
       self.JvmCompileWorkflowType.rsc_and_zinc: lambda: self._rsc_key_for_target(target),
       self.JvmCompileWorkflowType.outline_and_zinc: lambda: self._outline_key_for_target(target),
     })()
@@ -370,9 +370,6 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
 
   def _outline_key_for_target(self, target):
     return 'outline({})'.format(target.address.spec)
-
-  def _outlinej_key_for_target(self, target):
-    return 'outline[JAVA]({})'.format(target.address.spec)
 
   def _zinc_key_for_target(self, target, workflow):
     return workflow.match({
@@ -399,7 +396,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
 
       rsc_cc = compile_contexts[target].rsc_cc
 
-      use_youtline = rsc_cc.workflow == self.JvmCompileWorkflowType.outline_and_zinc
+      use_youtline = rsc_cc.workflow == self.JvmCompileWorkflowType.outline_and_zinc or rsc_cc.workflow == self.JvmCompileWorkflowType.zinc_java
       outliner = 'scalac-outliner' if use_youtline else 'rsc'
 
       if use_youtline and Semver.parse(self._scala_library_version) < Semver.parse("2.12.9"):
@@ -486,6 +483,9 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           
           # TODO: m.jar digests aren't found, so hermetic will fail.
           if use_youtline and not hermetic and self.get_options().zinc_outline:
+            print("GOGOGO")
+            print(rsc_jar_file_relative_path)
+            print("ZZZZZZ")
             self._zinc_outline(ctx, classpath_paths, target_sources, youtline_args)
           else:
             args = [
@@ -543,11 +543,10 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
         options_scope=self.options_scope)
 
     def make_outline_job(target, dep_targets, java=False):
-      if workflow == self.JvmCompileWorkflowType.outline_and_zinc:
+      if workflow == self.JvmCompileWorkflowType.outline_and_zinc or workflow == self.JvmCompileWorkflowType.zinc_java :
         target_key = self._outline_key_for_target(target)
-        if java:
-          target_key = self._outlinej_key_for_target(target)
       else:
+        raise RuntimeError(f"rsc_key, {target}, {workflow}")
         target_key = self._rsc_key_for_target(target)
       return Job(
         key=target_key,
@@ -561,7 +560,8 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
         ),
         # The rsc jobs depend on other rsc jobs, and on zinc jobs for targets that are not
         # processed by rsc.
-        dependencies=[cache_doublecheck_key] + list(all_zinc_rsc_invalid_dep_keys(dep_targets)),
+        # [cache_doublecheck_key] + 
+        dependencies=list(all_zinc_rsc_invalid_dep_keys(dep_targets)),
         size=1,
         options_scope=self.options_scope,
         target=target
@@ -584,7 +584,8 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
           counter,
           compile_contexts,
           CompositeProductAdder(*output_products)),
-        dependencies=[cache_doublecheck_key] + list(dep_keys),
+        #[cache_doublecheck_key] + 
+        dependencies=list(dep_keys),
         size=1,
         options_scope=self.options_scope,
         target=target
@@ -602,26 +603,26 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     record('execution_strategy', self.execution_strategy.value)
 
     # Create the cache doublecheck job.
-    workflow.match({
-      self.JvmCompileWorkflowType.zinc_only: lambda: cache_doublecheck_jobs.append(
-        make_cache_doublecheck_job(list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)))
-      ),
-      self.JvmCompileWorkflowType.zinc_java: lambda: cache_doublecheck_jobs.append(
-        make_cache_doublecheck_job(list(only_zinc_invalid_dep_keys(invalid_dependencies)))
-      ),
-      self.JvmCompileWorkflowType.rsc_and_zinc: lambda: cache_doublecheck_jobs.append(
-        make_cache_doublecheck_job(list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)))
-      ),
-      self.JvmCompileWorkflowType.outline_and_zinc: lambda: cache_doublecheck_jobs.append(
-        make_cache_doublecheck_job(list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)))
-      ),
-    })()
+    # workflow.match({
+    #   self.JvmCompileWorkflowType.zinc_only: lambda: cache_doublecheck_jobs.append(
+    #     make_cache_doublecheck_job(list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)))
+    #   ),
+    #   self.JvmCompileWorkflowType.zinc_java: lambda: cache_doublecheck_jobs.append(
+    #     make_cache_doublecheck_job(list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)))
+    #   ),
+    #   self.JvmCompileWorkflowType.rsc_and_zinc: lambda: cache_doublecheck_jobs.append(
+    #     make_cache_doublecheck_job(list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)))
+    #   ),
+    #   self.JvmCompileWorkflowType.outline_and_zinc: lambda: cache_doublecheck_jobs.append(
+    #     make_cache_doublecheck_job(list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)))
+    #   ),
+    # })()
 
     # Create the rsc job.
     # Currently, rsc only supports outlining scala.
     workflow.match({
       self.JvmCompileWorkflowType.zinc_only: lambda: None,
-      self.JvmCompileWorkflowType.zinc_java: lambda: None,
+      self.JvmCompileWorkflowType.zinc_java: lambda: rsc_jobs.append(make_outline_job(compile_target, invalid_dependencies, java=True)),
       self.JvmCompileWorkflowType.rsc_and_zinc: lambda: rsc_jobs.append(make_outline_job(compile_target, invalid_dependencies)),
       self.JvmCompileWorkflowType.outline_and_zinc: lambda: rsc_jobs.append(make_outline_job(compile_target, invalid_dependencies)),
     })()
@@ -632,7 +633,7 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     force_zinc = 'use-compiler:zinc-only' in tags
     
     def asdf2():
-      if True or not outline_only:
+      if force_zinc or not outline_only:
         zinc_jobs.append(
           make_zinc_job(
             compile_target,
@@ -643,13 +644,8 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
             dep_keys=list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)),
           ))
 
-    # Create the zinc compile jobs.
-    # - Scala zinc compile jobs depend on the results of running rsc on the scala target.
-    # - Java zinc compile jobs depend on the zinc compiles of their dependencies, because we can't
-    #   generate jars that make javac happy at this point.
-    workflow.match({
-      # NB: zinc-only zinc jobs run zinc and depend on rsc and/or zinc compile outputs.
-      self.JvmCompileWorkflowType.zinc_only: lambda: zinc_jobs.append(
+    def asdf3():
+      zinc_jobs.append(
         make_zinc_job(
           compile_target,
           input_product_key='rsc_mixed_compile_classpath',
@@ -657,23 +653,22 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
             runtime_classpath_product,
             self.context.products.get_data('rsc_mixed_compile_classpath'),
           ],
-          dep_keys=list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)))),
+          dep_keys=list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies))))
+
+    def asdf4():
+      raise RuntimeError("rscandzinc")
+
+    # Create the zinc compile jobs.
+    # - Scala zinc compile jobs depend on the results of running rsc on the scala target.
+    # - Java zinc compile jobs depend on the zinc compiles of their dependencies, because we can't
+    #   generate jars that make javac happy at this point.
+    workflow.match({
+      # NB: zinc-only zinc jobs run zinc and depend on rsc and/or zinc compile outputs.
+      self.JvmCompileWorkflowType.zinc_only: asdf3,
       # NB: javac can't read rsc output yet, so we need it to depend strictly on zinc
       # compilations of dependencies.
-      self.JvmCompileWorkflowType.zinc_java: lambda: rsc_jobs.append(make_outline_job(compile_target, invalid_dependencies, java=True)),
-      self.JvmCompileWorkflowType.rsc_and_zinc: lambda: zinc_jobs.append(
-        # NB: rsc-and-zinc jobs run zinc and depend on both rsc and zinc compile outputs.
-        make_zinc_job(
-          compile_target,
-          input_product_key='rsc_mixed_compile_classpath',
-          # NB: We want to ensure the 'runtime_classpath' product *only* contains the outputs of
-          # zinc compiles, and that the 'rsc_mixed_compile_classpath' entries for rsc-compatible targets
-          # *only* contain the output of an rsc compile for that target.
-          output_products=[
-            runtime_classpath_product,
-          ],
-          dep_keys=list(all_zinc_rsc_invalid_dep_keys(invalid_dependencies)),
-        )),
+      self.JvmCompileWorkflowType.zinc_java: asdf2,
+      self.JvmCompileWorkflowType.rsc_and_zinc: asdf4,
       # Should be the same as 'rsc-and-zinc' case
       self.JvmCompileWorkflowType.outline_and_zinc: asdf2,
     })()
@@ -682,16 +677,17 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
 
     # Create a job that depends on all real work having completed that will eagerly write to the
     # cache by calling `vt.update()`.
-    write_to_cache_job = Job(
-        key=self._write_to_cache_key_for_target(compile_target),
-        fn=ivts.update,
-        dependencies=[job.key for job in compile_jobs],
-        run_asap=True,
-        on_failure=ivts.force_invalidate,
-        options_scope=self.options_scope,
-        target=compile_target)
+    # write_to_cache_job = Job(
+    #     key=self._write_to_cache_key_for_target(compile_target),
+    #     fn=ivts.update,
+    #     dependencies=[job.key for job in compile_jobs],
+    #     run_asap=True,
+    #     on_failure=ivts.force_invalidate,
+    #     options_scope=self.options_scope,
+    #     target=compile_target)
 
-    all_jobs = cache_doublecheck_jobs + rsc_jobs + zinc_jobs # + [write_to_cache_job]
+    # cache_doublecheck_jobs + 
+    all_jobs = rsc_jobs + zinc_jobs # + [write_to_cache_job]
     return (all_jobs, len(compile_jobs))
 
   @dataclass(frozen=True)
@@ -857,6 +853,11 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
 
   # Mostly a copy-paste from ZincCompile.compile with many options removed
   def _zinc_outline(self, ctx, relative_classpath, target_sources, youtline_args):
+
+    # zinc_args = []
+    # if "-Ypickle-java" in youtline_args:
+    zinc_args = ["-no-javac"]
+
     zinc_youtline_args = [f'-S{arg}' for arg in youtline_args]
     zinc_file_manager = DependencyContext.global_instance().defaulted_property(ctx.target, 'zinc_file_manager')
 
@@ -869,7 +870,6 @@ class RscCompile(ZincCompile, MirroredTargetOptionMixin):
     scalac_classpath_entries = self.scalac_classpath_entries()
     scala_path = [relative_to_exec_root(classpath_entry.path) for classpath_entry in scalac_classpath_entries]
 
-    zinc_args = []
     zinc_args.extend([
       '-log-level', self.get_options().level,
       '-analysis-cache', analysis_cache,

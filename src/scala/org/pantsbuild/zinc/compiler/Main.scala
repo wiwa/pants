@@ -7,19 +7,17 @@ package org.pantsbuild.zinc.compiler
 import java.io.File
 import java.nio.file.Paths
 import scala.collection.JavaConverters._
-
 import sbt.internal.inc.IncrementalCompilerImpl
-import sbt.internal.util.{ BasicLogger, ConsoleLogger, ConsoleOut, StackTrace }
+import sbt.internal.util.{BasicLogger, ConsoleLogger, ConsoleOut, StackTrace}
 import sbt.io.IO
-import sbt.util.{ ControlEvent, Level, LogEvent, Logger }
+import sbt.util.{ControlEvent, Level, LogEvent, Logger}
 import xsbti.CompileFailed
-
 import com.martiansoftware.nailgun.NGContext
 import com.google.common.base.Charsets
 import com.google.common.io.Files
-
 import org.pantsbuild.zinc.analysis.AnalysisMap
 import org.pantsbuild.zinc.util.Util
+import xsbti.compile.CompileResult
 
 // TODO: why does the default logger take so long? Is it scanning the filesystem or doing something
 // else pathological?
@@ -210,7 +208,37 @@ object Main {
 
     try {
       // Run the compile.
-      val result = new IncrementalCompilerImpl().compile(inputs, log)
+      // if (settings.noJavac) {
+      println("WTFWTFWTF")
+      println(inputs.options().scalacOptions().toList)
+      val lastopt = inputs.options().scalacOptions().last
+      val outline = lastopt.endsWith("m.jar")
+
+      val outdir = if (outline) lastopt else settings._classesDirectory.get.toPath.toString
+      
+      val nsettings = new scala.tools.nsc.Settings()
+      println(lastopt, outline)
+      if (outline){
+        nsettings.Youtline.value = true
+        nsettings.stopAfter.value = List("pickler")
+        nsettings.YpickleJava.value = true
+        nsettings.YpickleWrite.value = outdir
+      }
+      nsettings.classpath.value = inputs.options().classpath().map(_.toPath.toString).mkString(java.io.File.pathSeparator)
+      nsettings.usejavacp.value = false
+      nsettings.d.value = outdir
+      nsettings.usejavacp.value = false
+      val reporter = new scala.tools.nsc.reporters.StoreReporter
+      val global = new scala.tools.nsc.Global(nsettings, reporter)
+      val run = new global.Run
+      run.compile(inputs.options().sources().map(_.toString).toList)
+      if (reporter.hasErrors) {
+        reporter.infos.foreach(println)
+        sys.error("compile failed")
+      }
+      return
+      // }
+      val result: CompileResult = new IncrementalCompilerImpl().compile(inputs, log)
 
       // post compile merge dir
       if (settings.postCompileMergeDir.isDefined) {

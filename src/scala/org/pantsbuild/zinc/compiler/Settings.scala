@@ -40,7 +40,8 @@ case class Settings(
   analysis: AnalysisOptions         = AnalysisOptions(),
   creationTime: Long                = 0,
   compiledBridgeJar: Option[File]   = None,
-  useBarebonesLogger: Boolean       = false
+  useBarebonesLogger: Boolean       = false,
+  noJavac: Boolean                  = true
 ) {
   import Settings._
 
@@ -351,6 +352,11 @@ object Settings {
       .abbr("java-only")
       .action((x, c) => c.copy(javaOnly = true))
       .text("Don't add scala library to classpath")
+
+    opt[Unit]("no-javac")
+      .abbr("no-javac")
+      .action((x, c) => c.copy(noJavac = true))
+      .text("Don't compile .java sources with javac")
 
     opt[Int]("transitive-step")
       .abbr("transitive-step")
